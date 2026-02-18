@@ -173,7 +173,7 @@ class Domain {
 
    void AllocateGradients(Int_t numElem, Int_t allElem)
    {
-      CkPrintf("[%d] Allocating gradients: numElem=%d allElem=%d\n", CkMyPe(), numElem, allElem) ;
+      // CkPrintf("[%d] Allocating gradients: numElem=%d allElem=%d\n", CkMyPe(), numElem, allElem) ;
       
       // Position gradients
       m_delx_xi.resize(numElem) ;

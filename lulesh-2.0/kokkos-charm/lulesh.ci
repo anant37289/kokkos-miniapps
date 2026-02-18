@@ -79,8 +79,10 @@ mainmodule lulesh {
                     CommSend(*locDom, MSG_COMM_SBN, 1, fieldData, locDom->sizeX() + 1,
                             locDom->sizeY() + 1, locDom->sizeZ() + 1, true, false, commDataSendSBN);
 
-                    recvRef = MSG_COMM_SBN | iter;
+                    recvRef = MAKE_REF(MSG_COMM_SBN, iter);
                     commNbrs = commDataRecvSBN.size();
+                    DBG_LITE("[%d,%d,%d] init SBN iter=%u ref=0x%x\n",
+                        thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
                 }
             }
 
@@ -95,7 +97,13 @@ mainmodule lulesh {
             
             when SBNSendDone() {
                 serial {
-                    CkPrintf("(%d, %d, %d) Initialization done\n", thisIndex.x, thisIndex.y, thisIndex.z);
+                    // Increment iter so that the first run() iteration uses different
+                    // SDAG reference tags than the init phase, preventing message
+                    // misdelivery when timing varies across GPUs.
+                    iter++;
+
+                    DBG_LITE("[%d,%d,%d] init DONE iter=%u\n",
+                        thisIndex.x, thisIndex.y, thisIndex.z, iter);
                     CkCallback cb(CkIndex_Main::initDone(), mainProxy);
                     contribute(cb);
                 }
@@ -119,6 +127,9 @@ mainmodule lulesh {
 
         entry void run() {
             serial "TimeStepCalculation" {
+                if (locDom->cycle() == 0) {
+                    startTime = CkWallTimer();
+                }
                 if ((opts.showProg != 0) && (opts.quiet == 0) && (flatIndex == 0)) {
                     CkPrintf("cycle = %d, time = %e, dt=%e\n", locDom->cycle(),
                              double(locDom->time()), double(locDom->deltatime()));
@@ -150,9 +161,10 @@ mainmodule lulesh {
                 CommSend(domain, MSG_COMM_SBN, 3, fieldData, domain.sizeX() + 1,
                          domain.sizeY() + 1, domain.sizeZ() + 1, true, false, commDataSendSBN);
                 
-                recvRef = MSG_COMM_SBN | iter;
+                recvRef = MAKE_REF(MSG_COMM_SBN, iter);
                 commNbrs = commDataRecvSBN.size();
-                CkPrintf("SBN num nbrs = %d\n", commNbrs);
+                DBG_LITE("[%d,%d,%d] SBN iter=%u ref=0x%x\n",
+                    thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
             }
 
             for (remoteCount = 0; remoteCount < commNbrs; remoteCount++) {
@@ -196,9 +208,10 @@ mainmodule lulesh {
                     CommSend(domain, MSG_SYNC_POS_VEL, 6, fieldData, domain.sizeX() + 1,
                             domain.sizeY() + 1, domain.sizeZ() + 1, false, false, commDataSendPosVel);
 
-                    recvRef = MSG_SYNC_POS_VEL | iter;
+                    recvRef = MAKE_REF(MSG_SYNC_POS_VEL, iter);
                     commNbrs = commDataRecvPosVel.size();
-                    CkPrintf("PosVel num nbrs = %d\n", commNbrs);
+                    DBG_LITE("[%d,%d,%d] PosVel iter=%u ref=0x%x\n",
+                        thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
                 }
             }
 
@@ -230,13 +243,14 @@ mainmodule lulesh {
                     fieldData[1] = domain.m_delv_eta;
                     fieldData[2] = domain.m_delv_zeta;
                     
-                    CkPrintf("SENDING Q\n");
+                    // CkPrintf("SENDING Q\n");
                     CommSend(domain, MSG_MONOQ, 3, fieldData, domain.sizeX(), domain.sizeY(),
                             domain.sizeZ(), true, true, commDataSendMonoQ);
 
-                    recvRef = MSG_MONOQ | iter;
+                    recvRef = MAKE_REF(MSG_MONOQ, iter);
                     commNbrs = commDataRecvMonoQ.size();
-                    CkPrintf("Q num nbrs = %d\n", commNbrs);
+                    DBG_LITE("[%d,%d,%d] MonoQ iter=%u ref=0x%x\n",
+                        thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
                 }
             }
 
@@ -244,8 +258,6 @@ mainmodule lulesh {
                 when CommRecv[recvRef](uint32_t ref, int x, int y, int z, int xferFields, 
                         int size, nocopydevice Real_t buf[size]) {
                     serial "processRemoteQ" {
-                        //CkPrintf("DomainChare::CommRecv: ref=%d from (%d,%d,%d) to (%d,%d,%d) xferFields=%d\n", 
-                        //    ref, x, y, z, thisIndex.x, thisIndex.y, thisIndex.z, xferFields);
                         processRemoteQ(ref, x, y, z, xferFields, size, buf);
                     }
                 }
@@ -270,6 +282,8 @@ mainmodule lulesh {
                 CalcTimeConstraintsForElems(domain, computeSpace);
 
                 iter++;
+                DBG_LITE("[%d,%d,%d] DONE iter=%u\n",
+                    thisIndex.x, thisIndex.y, thisIndex.z, iter);
             }
 
             when MonoQSendDone() {
@@ -278,6 +292,10 @@ mainmodule lulesh {
                     if ((locDom->time() < locDom->stoptime()) && (locDom->cycle() < opts.its)) {
                         thisProxy[thisIndex].run();
                     } else {
+                        if (thisIndex.x == 0 && thisIndex.y == 0 && thisIndex.z == 0) {
+                            Real_t elapsed_time = CkWallTimer() - startTime;
+                            VerifyAndWriteFinalOutput(elapsed_time, *locDom, locDom->sizeX(), locDom->numRanks());
+                        }
                         delete locDom;
                         CkCallback cb(CkReductionTarget(Main, done), mainProxy);
                         contribute(cb);

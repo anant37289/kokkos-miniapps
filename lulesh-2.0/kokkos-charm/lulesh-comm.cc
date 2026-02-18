@@ -534,13 +534,26 @@ void DomainChare::CommSend(Domain& domain, int msgType,
                            Index_t dx, Index_t dy, Index_t dz, bool doSend, bool planeOnly,
                            CommDataMap_t& commDataMap)
 {
-   if (domain.numRanks() == 1)
+   if (domain.numRanks() == 1) {
+      if (msgType == MSG_SYNC_POS_VEL) {
+         thisProxy[thisIndex].PosVelSendDone();
+      }
+      else if (msgType == MSG_MONOQ) {
+         thisProxy[thisIndex].MonoQSendDone();
+      }
+      else if (msgType == MSG_COMM_SBN) {
+         thisProxy[thisIndex].SBNSendDone();
+      }
       return ;
+   }
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
 
    CommDataMapIter_t it;
+
+   DBG_PRINTF("[DEBUG CommSend] (%d,%d,%d) iter=%u msgType=0x%x xferFields=%d commDataMap.size()=%lu\n",
+      thisIndex.x, thisIndex.y, thisIndex.z, iter, msgType, xferFields, (unsigned long)commDataMap.size());
 
    if (commDataMap.size() == 0) {
       if (msgType == MSG_SYNC_POS_VEL) {
@@ -561,20 +574,11 @@ void DomainChare::CommSend(Domain& domain, int msgType,
       int offsetY = std::get<1>(idx) - thisIndex.y ;
       int offsetZ = std::get<2>(idx) - thisIndex.z ;
 
-      CkPrintf("DomainChare::CommSend: ref=%d msgType=%d to (%d,%d,%d) from (%d,%d,%d) offsetX=%d offsetY=%d offsetZ=%d\n", 
-         (msgType | iter), msgType, std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
-         thisIndex.x, thisIndex.y, thisIndex.z,
-         offsetX, offsetY, offsetZ);
-
       int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL; 
 
       if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
          offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
-         CkPrintf("(%d, %d, %d) Packing Kernel %d: Performing 2D copy to offset %d, src_stride %d %d, dst_stride %d %d, size %d %d, buffer size %lu\n", 
-            thisIndex.x, thisIndex.y, thisIndex.z, msgType,
-            offset, cdata.src_stride[0], cdata.src_stride[1], cdata.dst_stride[0], cdata.dst_stride[1], cdata.size[0], cdata.size[1], domain.commDataSendView.size());
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
-            //CkPrintf("2D copy offsetX=%d offsetY=%d offsetZ=%d\n", offsetX, offsetY, offsetZ);
             Kokkos::View<Real_t*> src = fieldData[fi] ;
             Copy2D(src, cdata.offset, cdata.src_stride[0], cdata.src_stride[1],
                    domain.commDataSendView, 
@@ -583,13 +587,6 @@ void DomainChare::CommSend(Domain& domain, int msgType,
                    cdata.size[0], cdata.size[1], commSpace);
          }
       } else {
-         // CkPrintf("1D copy offsetX=%d offsetY=%d offsetZ=%d, offset=%d, dx=%d, dy=%d, dz=%d, \
-         //     commDataSendView size=%lu, send offset=%d\n", 
-         //     offsetX, offsetY, offsetZ, cdata.offset, dx, dy, dz, domain.commDataSendView.size(), 
-         //     offset);
-         CkPrintf("(%d, %d, %d) Packing Kernel %d: Performing 1D copy to offset %d, src_stride %d, dst_stride %d, size %d, buffer size %lu\n", 
-            thisIndex.x, thisIndex.y, thisIndex.z, msgType,
-            offset, cdata.src_stride[0], cdata.dst_stride[0], cdata.size[0], domain.commDataSendView.size());
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
             Copy1D(src, cdata.offset, cdata.src_stride[0],
@@ -602,49 +599,43 @@ void DomainChare::CommSend(Domain& domain, int msgType,
       commSpace.fence();
       
       CkCallback* cb = new CkCallback(CkIndex_DomainChare::packingDone(NULL), thisProxy[thisIndex]);
-      PackingDoneMsg* msg = new PackingDoneMsg(msgType,
+      int sendCount = xferFields * cdata.size[0] * cdata.size[1];
+      PackingDoneMsg* msg = new PackingDoneMsg(msgType, iter,
          std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
-         xferFields, xferFields * cdata.size[0] * cdata.size[1], offset);
+         xferFields, sendCount, offset);
       
+      DBG_PRINTF("[DEBUG CommSend packing] (%d,%d,%d)->(%d,%d,%d) iter=%u msgType=0x%x xferFields=%d sendCount=%d offset=%d\n",
+         thisIndex.x, thisIndex.y, thisIndex.z,
+         std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
+         iter, msgType, xferFields, sendCount, offset);
+
       hapiAddCallback(commStream, cb, msg);
    }
 }
 
 void DomainChare::PosVelSendCallback() {
-   CkPrintf("DomainChare::PosVelSendCallback: PosVelSendCallback called for iter %d on (%d,%d,%d)\n", 
-      iter, thisIndex.x, thisIndex.y, thisIndex.z);
    if (++posVelSendsDone == commDataSendPosVel.size()) {
-      CkPrintf("DomainChare::PosVelSendCallback: pos/vel send done for iter %d on (%d,%d,%d)\n", 
-         iter, thisIndex.x, thisIndex.y, thisIndex.z);
       thisProxy[thisIndex].PosVelSendDone();
       posVelSendsDone = 0 ;
    }
 }
 
 void DomainChare::MonoQSendCallback() {
-   CkPrintf("DomainChare::MonoQSendCallback: MonoQSendCallback called for iter %d on (%d,%d,%d)\n", 
-      iter, thisIndex.x, thisIndex.y, thisIndex.z);
    if (++monoQSendsDone == commDataSendMonoQ.size()) {
-      CkPrintf("DomainChare::MonoQSendCallback: MonoQ send done for iter %d on (%d,%d,%d)\n", 
-         iter, thisIndex.x, thisIndex.y, thisIndex.z);
       thisProxy[thisIndex].MonoQSendDone();
       monoQSendsDone = 0 ;
    }
 }
 
 void DomainChare::SBNSendCallback() {
-   CkPrintf("DomainChare::SBNSendCallback: SBNSendCallback called for iter %d on (%d,%d,%d). sends done = %d, total=%d\n", 
-      iter, thisIndex.x, thisIndex.y, thisIndex.z, sbnSendsDone+1, commDataSendSBN.size());
    if (++sbnSendsDone == commDataSendSBN.size()) {
-      CkPrintf("DomainChare::SBNSendCallback: SBN send done for iter %d on (%d,%d,%d)\n", 
-         iter, thisIndex.x, thisIndex.y, thisIndex.z);
       thisProxy[thisIndex].SBNSendDone();
       sbnSendsDone = 0 ;
    }
 }
    
 void DomainChare::packingDone(PackingDoneMsg* msg) {
-   uint32_t ref = msg->msgType | iter;
+   uint32_t ref = MAKE_REF(msg->msgType, msg->sendIter);
    CkCallback* cb;
    CkArrayIndex3D myIndex = CkArrayIndex3D(thisIndex);
 
@@ -660,37 +651,33 @@ void DomainChare::packingDone(PackingDoneMsg* msg) {
    else
       CkAbort("DomainChare::packingDone: Unknown msgType") ;
 
+   Real_t* sendPtr = locDom->commDataSendView.data() + msg->offset;
+
    thisProxy(msg->x, msg->y, msg->z).CommRecv(ref, thisIndex.x, thisIndex.y, thisIndex.z, 
-      msg->xferFields, msg->sendCount, CkDeviceBuffer(locDom->commDataSendView.data() + msg->offset, *cb, commStream));
+      msg->xferFields, msg->sendCount, CkDeviceBuffer(sendPtr, *cb, commStream));
 }
 
 /******************************************/
 
 void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, int& size, Real_t* &buf, CkDeviceBufferPost* post) {
-   
-   uint32_t msgType = (ref >> 29) << 29;
+   uint32_t msgType = REF_MSGTYPE(ref);
    CommDataMap_t* commDataMap;
    if (msgType == MSG_SYNC_POS_VEL) {
       commDataMap = &commDataRecvPosVel;
-      CkPrintf("DomainChare::CommRecv: ref=%d MSG_SYNC_POS_VEL from (%d,%d,%d) to (%d,%d,%d) xferFields=%d\n", 
-         ref, x, y, z, thisIndex.x, thisIndex.y, thisIndex.z, xferFields);
    }
    else if (msgType == MSG_MONOQ) {
       commDataMap = &commDataRecvMonoQ;
-      CkPrintf("DomainChare::CommRecv: ref=%d MSG_MONOQ from (%d,%d,%d) to (%d,%d,%d) xferFields=%d\n", 
-         ref, x, y, z, thisIndex.x, thisIndex.y, thisIndex.z, xferFields);
    }
    else if (msgType == MSG_COMM_SBN) {
       commDataMap = &commDataRecvSBN;
-      CkPrintf("DomainChare::CommRecv: ref=%d MSG_COMM_SBN from (%d,%d,%d) to (%d,%d,%d) xferFields=%d\n", 
-         ref, x, y, z, thisIndex.x, thisIndex.y, thisIndex.z, xferFields);
    }
    else
       CkAbort("DomainChare::CommRecv: Unknown msgType") ;
 
    CommDataMapIter_t it = commDataMap->find({x, y, z});
-   if (it == commDataMap->end())
+   if (it == commDataMap->end()) {
       CkAbort("DomainChare::CommRecv: Invalid comm data map key") ;
+   }
 
    Index_t maxPlaneComm = xferFields * locDom->maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * locDom->maxEdgeSize() ;
@@ -771,8 +758,6 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
 void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
 
-   CkPrintf("processRemoteQ: ref=%d from (%d,%d,%d) to (%d,%d,%d) xferFields=%d size=%d\n", 
-      ref, x, y, z, thisIndex.x, thisIndex.y, thisIndex.z, xferFields, size);
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
@@ -795,42 +780,22 @@ void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFiel
 
    if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
          offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
+      int copyLen = cdata.size[0] * cdata.size[1];
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> &dest = fieldData[fi] ;
-         if (dest.data() == nullptr)
-            CkPrintf("processRemoteQ: dest fieldData[%d] is null\n", fi);
-         Copy1D(domain.commDataRecvView, 
-            offset + fi * cdata.size[0] * cdata.size[1],
-            1,
-            dest, fieldOffset[fi] + cdata.pmsg * fi * cdata.size[0] * cdata.size[1], 1,
-            cdata.size[0] * cdata.size[1], commSpace
-            );
-         // Copy1D(dest, fieldOffset[fi] + cdata.pmsg * cdata.size[0] * cdata.size[1], 1,
-         //    domain.commDataRecvView, 
-         //    offset + fi * cdata.size[0] * cdata.size[1],
-         //    1,
-         //    cdata.size[0] * cdata.size[1], commSpace
-         //    );
-         //fieldOffset[fi] += cdata.size[0] * cdata.size[1];
+         int srcOff = offset + fi * copyLen;
+         int dstOff = fieldOffset[fi] + cdata.pmsg * copyLen;
+         Copy1D(domain.commDataRecvView, srcOff, 1,
+            dest, dstOff, 1, copyLen, commSpace);
       }
    } else {
+      int copyLen = cdata.size[0];
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> &dest = fieldData[fi];
-         if (dest.data() == nullptr)
-            CkPrintf("processRemoteQ: dest fieldData[%d] is null\n", fi);
-         Copy1D(domain.commDataRecvView, 
-            offset + fi * cdata.size[0],
-            1,
-            dest, fieldOffset[fi] + cdata.pmsg * fi * cdata.size[0], 1,
-            cdata.size[0], commSpace
-            );
-         // Copy1D(dest, fieldOffset[fi] + cdata.pmsg * cdata.size[0], 1,
-         //    domain.commDataRecvView, 
-         //    offset + fi * cdata.size[0],
-         //    1,
-         //    cdata.size[0], commSpace
-         //    );
-         //fieldOffset[fi] += cdata.size[0];
+         int srcOff = offset + fi * copyLen;
+         int dstOff = fieldOffset[fi] + cdata.pmsg * copyLen;
+         Copy1D(domain.commDataRecvView, srcOff, 1,
+            dest, dstOff, 1, copyLen, commSpace);
       }
    }
    commSpace.fence();
@@ -854,44 +819,27 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
 
    int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
 
-   CkPrintf("processRemoteMass: ref=%d from (%d,%d,%d) to (%d,%d,%d) xferFields=%d size=%d\n", 
-      ref, x, y, z, thisIndex.x, thisIndex.y, thisIndex.z, xferFields, size);
-
-   // if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
-   //       offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
-   //    for (Index_t fi=0 ; fi<xferFields; ++fi) {
-   //       Kokkos::View<Real_t*> dest = fieldData[fi] ;
-   //       // CkPrintf("[DBG] processRemoteMass: 2D Add offset=%d size0=%d size1=%d, src_stride=%d %d, dst_stride=%d %d, dest_size=%d\n", 
-   //       //    offset + fi * cdata.size[0] * cdata.size[1],
-   //       //    cdata.size[0], cdata.size[1], cdata.src_stride[0], cdata.src_stride[1], 
-   //       //    cdata.dst_stride[0], cdata.dst_stride[1], dest.size());
-   //       Add2D(domain.commDataRecvView, 
-   //             offset + fi * cdata.size[0] * cdata.size[1],
-   //             1, cdata.size[0],
-   //             dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-   //             cdata.size[0], cdata.size[1], commSpace);
-   //       // Add2D(dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-   //       //       domain.commDataRecvView, 
-   //       //       offset + fi * cdata.size[0] * cdata.size[1],
-   //       //       cdata.src_stride[0], cdata.src_stride[1],
-   //       //       cdata.size[0], cdata.size[1], commSpace);
-   //    }
-   // } else {
-   //    for (Index_t fi=0 ; fi<xferFields; ++fi) {
-   //       Kokkos::View<Real_t*> dest = fieldData[fi] ;
-   //       Add1D(domain.commDataRecvView, 
-   //             offset + fi * cdata.size[0],
-   //             1,
-   //             dest, cdata.offset, cdata.dst_stride[0],
-   //             cdata.size[0], commSpace);
-   //       // Add1D(dest, cdata.offset, cdata.dst_stride[0],
-   //       //       domain.commDataRecvView, 
-   //       //       offset + fi * cdata.size[0],
-   //       //       cdata.src_stride[0],
-   //       //       cdata.size[0], commSpace);
-   //    }
-   // }
-   // commSpace.fence();
+   if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
+         offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
+      for (Index_t fi=0 ; fi<xferFields; ++fi) {
+         Kokkos::View<Real_t*> dest = fieldData[fi] ;
+         Add2D(domain.commDataRecvView, 
+               offset + fi * cdata.size[0] * cdata.size[1],
+               1, cdata.size[0],
+               dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
+               cdata.size[0], cdata.size[1], commSpace);
+      }
+   } else {
+      for (Index_t fi=0 ; fi<xferFields; ++fi) {
+         Kokkos::View<Real_t*> dest = fieldData[fi] ;
+         Add1D(domain.commDataRecvView, 
+               offset + fi * cdata.size[0],
+               1,
+               dest, cdata.offset, cdata.dst_stride[0],
+               cdata.size[0], commSpace);
+      }
+   }
+   commSpace.fence();
 }
 
 /******************************************/
