@@ -358,7 +358,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
   execSpace.fence();
-  CkPrintf("First fence in IntegrateStressForElems\n");
+  // CkPrintf("First fence in IntegrateStressForElems\n");
 
   Kokkos::parallel_for ("IntegrateStressForElems B",Kokkos::TeamPolicy((numNode+127)/128,team_size,2),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
@@ -385,7 +385,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
      });
 
   execSpace.fence();
-  CkPrintf("Second fence in IntegrateStressForElems\n");
+  // CkPrintf("Second fence in IntegrateStressForElems\n");
 }
 
 KOKKOS_INLINE_FUNCTION void VoluDer(const Real_t x0, const Real_t x1, const Real_t x2,
@@ -752,23 +752,11 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
     Real_t *sigzz = Allocate<Real_t>(numElem);
     Real_t *determ = Allocate<Real_t>(numElem);
     execSpace.fence();
-    CkPrintf("First fence in CalcVolumeForceForElems\n");
 
     InitStressTermsForElems(domain, sigxx, sigyy, sigzz, numElem, execSpace);
 
     IntegrateStressForElems(domain, sigxx, sigyy, sigzz, determ, numElem,
                             domain.numNode(), execSpace);
-
-    // check for negative element volume
-    int error = 0;
-    Kokkos::parallel_reduce(RangePolicy(0, numElem), KOKKOS_LAMBDA(const int k, int &err) {
-      if (determ[k] <= Real_t(0.0)) {
-        err++;
-      }
-    },error);
-
-    //if (error)
-    //  CkAbort("VolumeError2");
 
     CalcHourglassControlForElems(domain, determ, hgcoef, execSpace);
   }
@@ -1941,6 +1929,8 @@ static inline void CalcTimeConstraintsForElems(Domain &domain, ExecSpace execSpa
 }
 
 Main::Main(CkArgMsg* m) {
+  mainProxy = thisProxy;
+
   Int_t numRanks;
   Int_t myRank;
   struct cmdLineOpts opts;

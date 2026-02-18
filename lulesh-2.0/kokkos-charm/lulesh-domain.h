@@ -5,7 +5,7 @@
 // used supports it (i.e. the _OPENMP symbol is defined)
 
 #include <Kokkos_Core.hpp>
-#include <Kokkos_Vector.hpp>
+// #include <Kokkos_Vector.hpp>
 #include <Kokkos_StaticCrsGraph.hpp>
 
 #include <math.h>
@@ -88,10 +88,18 @@ KOKKOS_INLINE_FUNCTION real10 FABS(real10 arg) { return fabsl(arg); }
 #define ZETA_P_FREE 0x10000
 #define ZETA_P_COMM 0x20000
 
-// MPI Message Tags
-#define MSG_COMM_SBN (1 << 30)
-#define MSG_SYNC_POS_VEL (1 << 29)
-#define MSG_MONOQ 0
+// MPI Message Tags - MUST fit in CMK_REFNUM_TYPE (unsigned short, 16-bit)
+// Encoding: low 2 bits = message type, bits 2+ = iter
+// ref = (iter << 2) | msgType
+// msgType = ref & 0x3
+// iter = ref >> 2
+#define MSG_COMM_SBN      1
+#define MSG_SYNC_POS_VEL  2
+#define MSG_MONOQ         3
+#define MSG_MASS          0   // used in init phase
+#define MAKE_REF(msgType, iter) (((iter) << 2) | (msgType))
+#define REF_MSGTYPE(ref)        ((ref) & 0x3)
+#define REF_ITER(ref)           ((ref) >> 2)
 
 #define MAX_FIELDS_PER_MPI_COMM 6
 
@@ -212,7 +220,7 @@ public:
 
   void AllocateGradients(Int_t numElem, Int_t allElem) {
 
-    CkPrintf("[%d] Allocating gradients: numElem=%d allElem=%d\n", CkMyPe(), numElem, allElem) ;
+    // CkPrintf("[%d] Allocating gradients: numElem=%d allElem=%d\n", CkMyPe(), numElem, allElem) ;
 
     // Position gradients
     Kokkos::resize(m_delx_xi,numElem);
