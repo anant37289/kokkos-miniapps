@@ -600,7 +600,7 @@ void DomainChare::CommSend(Domain& domain, int msgType,
       
       CkCallback* cb = new CkCallback(CkIndex_DomainChare::packingDone(NULL), thisProxy[thisIndex]);
       int sendCount = xferFields * cdata.size[0] * cdata.size[1];
-      PackingDoneMsg* msg = new PackingDoneMsg(msgType, iter,
+      PackingDoneMsg* msg = new PackingDoneMsg(msgType,
          std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
          xferFields, sendCount, offset);
       
@@ -635,7 +635,7 @@ void DomainChare::SBNSendCallback() {
 }
    
 void DomainChare::packingDone(PackingDoneMsg* msg) {
-   uint32_t ref = MAKE_REF(msg->msgType, msg->sendIter);
+   uint32_t ref = MAKE_REF(msg->msgType, iter);
    CkCallback* cb;
    CkArrayIndex3D myIndex = CkArrayIndex3D(thisIndex);
 

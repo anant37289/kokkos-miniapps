@@ -137,13 +137,12 @@ public:
 class PackingDoneMsg : public CMessage_PackingDoneMsg {
 public:
   uint32_t msgType;
-  uint32_t sendIter;  // iter captured at CommSend time (not live iter at callback time)
   int x, y, z;
   int xferFields, sendCount, offset;
 
-  PackingDoneMsg(uint32_t msgType_, uint32_t sendIter_, int x_, int y_, int z_,
+  PackingDoneMsg(uint32_t msgType_, int x_, int y_, int z_,
                  int xferFields_, int sendCount_, int offset_)
-      : msgType(msgType_), sendIter(sendIter_), x(x_), y(y_), z(z_),
+      : msgType(msgType_), x(x_), y(y_), z(z_),
         xferFields(xferFields_), sendCount(sendCount_), offset(offset_) {}
 };
 
