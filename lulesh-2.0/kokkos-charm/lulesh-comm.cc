@@ -587,7 +587,7 @@ void DomainChare::CommSend(Domain& domain, int msgType,
                    domain.commDataSendView, 
                    offset + fi * cdata.size[0] * cdata.size[1], 
                    cdata.dst_stride[0], cdata.dst_stride[1], 
-                   cdata.size[0], cdata.size[1], commSpace);
+                   cdata.size[0], cdata.size[1], commSpace);//TODO:: sync for correctness, i think work has been on computeSpace before this
          }
       } else {
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
@@ -639,6 +639,10 @@ void DomainChare::SBNSendCallback() {
 }
    
 void DomainChare::packingDone(PackingDoneMsg* msg) {
+   std::ostringstream os;
+   os<<" [start] packingDone ";
+   NVTXTracer(os.str(), NVTXColor::PeterRiver);
+   os.clear();
    uint32_t ref = MAKE_REF(msg->msgType, msg->sendIter);
    CkCallback* cb;
    CkArrayIndex3D myIndex = CkArrayIndex3D(thisIndex);
@@ -659,11 +663,19 @@ void DomainChare::packingDone(PackingDoneMsg* msg) {
 
    thisProxy(msg->x, msg->y, msg->z).CommRecv(ref, thisIndex.x, thisIndex.y, thisIndex.z, 
       msg->xferFields, msg->sendCount, CkDeviceBuffer(sendPtr, *cb, commStream));
+   // std::ostringstream os;
+   os<<" [end] packingDone ";
+   NVTXTracer(os.str(), NVTXColor::PeterRiver);
+   os.clear();
 }
 
 /******************************************/
 
 void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, int& size, Real_t* &buf, CkDeviceBufferPost* post) {
+   std::ostringstream os;
+   os<<" [start] CommRecv ";
+   NVTXTracer(os.str(), NVTXColor::PeterRiver);
+   os.clear();
    uint32_t msgType = REF_MSGTYPE(ref);
    CommDataMap_t* commDataMap;
    if (msgType == MSG_SYNC_POS_VEL) {
@@ -694,6 +706,10 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
 
    buf = locDom->commDataRecvView.data() + offset;
    post[0].hapi_stream = commStream;
+   // std::ostringstream os;
+   os<<" [end] CommRecv ";
+   NVTXTracer(os.str(), NVTXColor::PeterRiver);
+   os.clear();
 }
 
 /******************************************/

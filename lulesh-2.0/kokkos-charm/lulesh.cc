@@ -12,7 +12,6 @@
 #include <unistd.h>
 
 #include "lulesh.h"
-#include "hapi_nvtx.h"
 
 /* readonly */ CProxy_Main mainProxy;
 /* readonly */ CProxy_KokkosManager kokkosProxy;
@@ -328,7 +327,6 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
                                            Real_t *determ, Index_t numElem,
                                            Index_t numNode, ExecSpace execSpace) {
   Index_t numElem8 = numElem * 8;
-  ResizeBuffer((numElem8*sizeof(Real_t)+4096)*3);
   Real_t *fx_elem_ptr = AllocateFromBuffer<Real_t>(numElem8);
   Real_t *fy_elem_ptr = AllocateFromBuffer<Real_t>(numElem8);
   Real_t *fz_elem_ptr = AllocateFromBuffer<Real_t>(numElem8);
@@ -522,6 +520,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   std::ostringstream os;
   os << "CalcFBHourglassForceForElems A ";
   NVTXTracer(os.str(), NVTXColor::GreenSea);
+  os.clear();
   Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int &i2) {
     Real_t *fx_local, *fy_local, *fz_local;
@@ -670,9 +669,11 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   // std::ostringstream os; 
   os << "[END] CalcFBHourglassForceForElems A ";
   NVTXTracer(os.str(), NVTXColor::GreenSea);
+  os.clear();
   if(!do_atomic) {
     os << "CalcFBHourglassForceForElems B ";
     NVTXTracer(os.str(), NVTXColor::Turquoise);
+    os.clear();
     int team_size = 1;
     if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
@@ -705,13 +706,13 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   // std::ostringstream os;
   os << "[END] CalcFBHourglassForceForElems ";
   NVTXTracer(os.str(), NVTXColor::Turquoise);
+  os.clear();
 }
 
 static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
                                                 Real_t hgcoef, ExecSpace execSpace) {
   Index_t numElem = domain.numElem();
   Index_t numElem8 = numElem * 8;
-  ResizeBuffer((numElem8*sizeof(Real_t)+4096)*(do_atomic?6:9));
 
   Real_t *dvdx = AllocateFromBuffer<Real_t>(numElem8);
   Real_t *dvdy = AllocateFromBuffer<Real_t>(numElem8);
@@ -765,16 +766,27 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
   Index_t numElem = domain.numElem();
   if (numElem != 0) {
     Real_t hgcoef = domain.hgcoef();
-    Real_t *sigxx = Allocate<Real_t>(numElem);
-    Real_t *sigyy = Allocate<Real_t>(numElem);
-    Real_t *sigzz = Allocate<Real_t>(numElem);
-    Real_t *determ = Allocate<Real_t>(numElem);
-    // execSpace.fence();
+    Index_t numElem8 = numElem * 8;
+
+    // Single ResizeBuffer for the entire call chain:
+    //  - 4 x numElem for sigxx/sigyy/sigzz/determ (persistent across sub-calls)
+    //  - max scratch is CalcHourglassControlForElems: (do_atomic?6:9) x numElem8
+    ResizeBuffer((numElem * sizeof(Real_t) + 4096) * 4 +
+                 (numElem8 * sizeof(Real_t) + 4096) * (do_atomic ? 6 : 9));
+
+    Real_t *sigxx  = AllocateFromBuffer<Real_t>(numElem);
+    Real_t *sigyy  = AllocateFromBuffer<Real_t>(numElem);
+    Real_t *sigzz  = AllocateFromBuffer<Real_t>(numElem);
+    Real_t *determ = AllocateFromBuffer<Real_t>(numElem);
+    size_t scratch_start = buffer_offset;
 
     InitStressTermsForElems(domain, sigxx, sigyy, sigzz, numElem, execSpace);
 
     IntegrateStressForElems(domain, sigxx, sigyy, sigzz, determ, numElem,
                             domain.numNode(), execSpace);
+
+    // Reclaim IntegrateStressForElems scratch; sigxx/sigyy/sigzz/determ stay valid
+    buffer_offset = scratch_start;
 
     CalcHourglassControlForElems(domain, determ, hgcoef, execSpace);
   }

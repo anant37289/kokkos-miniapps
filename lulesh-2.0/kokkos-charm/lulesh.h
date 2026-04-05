@@ -24,6 +24,7 @@
 //#include "lulesh-domain.h"
 #include "lulesh.decl.h"
 #include "hapi.h"
+#include "hapi_nvtx.h"
 
 struct TupleHash {
     template <class T1, class T2, class T3>
