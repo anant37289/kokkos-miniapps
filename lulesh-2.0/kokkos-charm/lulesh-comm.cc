@@ -64,7 +64,8 @@ void Copy1D(Kokkos::View<Real_t*> &src, int src_offset,
     Kokkos::View<Real_t*> &dest, int dst_offset, int dst_stride,
    int size, ExecSpace execSpace)
 {
-   Kokkos::parallel_for("Copy1D", RangePolicy(execSpace, 0, size),
+   //Copy1D
+   Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, size), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
       dest[dst_offset + i * dst_stride] = src[src_offset + i * src_stride];
    });
@@ -91,7 +92,9 @@ void Copy2D(Kokkos::View<Real_t*> &src,
    int dim_x, int dim_y, ExecSpace execSpace)
 {
    Kokkos::MDRangePolicy<Kokkos::Rank<2>> policy(execSpace, {0, 0}, {dim_x, dim_y});
-   Kokkos::parallel_for("Copy2D", policy,
+   
+   //"Copy2D"
+   Kokkos::parallel_for(Kokkos::Experimental::require(policy, Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i, const int j) {
       dest[dst_offset + j * dst_stride_y + i * dst_stride_x] = 
          src[src_offset + j * src_stride_y + i * src_stride_x];
@@ -596,11 +599,12 @@ void DomainChare::CommSend(Domain& domain, int msgType,
          }
       }
 
-      commSpace.fence();
+      // commSpace.fence();
       
       CkCallback* cb = new CkCallback(CkIndex_DomainChare::packingDone(NULL), thisProxy[thisIndex]);
       int sendCount = xferFields * cdata.size[0] * cdata.size[1];
       PackingDoneMsg* msg = new PackingDoneMsg(msgType,
+         iter,
          std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
          xferFields, sendCount, offset);
       
@@ -635,7 +639,7 @@ void DomainChare::SBNSendCallback() {
 }
    
 void DomainChare::packingDone(PackingDoneMsg* msg) {
-   uint32_t ref = MAKE_REF(msg->msgType, iter);
+   uint32_t ref = MAKE_REF(msg->msgType, msg->sendIter);
    CkCallback* cb;
    CkArrayIndex3D myIndex = CkArrayIndex3D(thisIndex);
 

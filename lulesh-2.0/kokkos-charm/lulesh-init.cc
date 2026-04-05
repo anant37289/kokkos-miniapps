@@ -836,6 +836,7 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    else {
       myDom = remainder*( 1+ (dx*dy*dz / numRanks)) +
          (myRank - remainder)*(dx*dy*dz/numRanks) ;
+         
    }
 
    *col = myDom % dx ;

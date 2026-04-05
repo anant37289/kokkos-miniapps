@@ -1,8 +1,8 @@
 #ifndef LULESH_H
 #define LULESH_H
 
-#define DEBUG_COMM 0       // verbose per-message prints (changes timing!)
-#define DEBUG_COMM_LITE 0  // lightweight phase-transition prints only
+#define DEBUG_COMM 1      // verbose per-message prints (changes timing!)
+#define DEBUG_COMM_LITE 1  // lightweight phase-transition prints only
 #if DEBUG_COMM
 #define DBG_PRINTF(...) CkPrintf(__VA_ARGS__)
 #else
@@ -137,12 +137,13 @@ public:
 class PackingDoneMsg : public CMessage_PackingDoneMsg {
 public:
   uint32_t msgType;
+  uint32_t sendIter;  // iter value captured at CommSend time (not when packingDone fires)
   int x, y, z;
   int xferFields, sendCount, offset;
 
-  PackingDoneMsg(uint32_t msgType_, int x_, int y_, int z_,
+  PackingDoneMsg(uint32_t msgType_, uint32_t sendIter_, int x_, int y_, int z_,
                  int xferFields_, int sendCount_, int offset_)
-      : msgType(msgType_), x(x_), y(y_), z(z_),
+      : msgType(msgType_), sendIter(sendIter_), x(x_), y(y_), z(z_),
         xferFields(xferFields_), sendCount(sendCount_), offset(offset_) {}
 };
 
