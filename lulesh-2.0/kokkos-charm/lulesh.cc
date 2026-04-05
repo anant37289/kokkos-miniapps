@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "lulesh.h"
+#include "hapi_nvtx.h"
 
 /* readonly */ CProxy_Main mainProxy;
 /* readonly */ CProxy_KokkosManager kokkosProxy;
@@ -136,8 +137,8 @@ CollectDomainNodesToElemNodes(const Domain &domain, const Index_t *elemToNode,
 static inline void InitStressTermsForElems(Domain &domain, Real_t *sigxx,
                                            Real_t *sigyy, Real_t *sigzz,
                                            Index_t numElem, ExecSpace execSpace) {
-
-  Kokkos::parallel_for("InitStressTermsForElems", RangePolicy(0, numElem),
+  //InitStressTermsForElems
+  Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const Index_t &i) {
     sigxx[i] = sigyy[i] = sigzz[i] = -domain.p(i) - domain.q(i);
   });
@@ -320,6 +321,8 @@ SumElemStressesToNodeForces(const Real_t B[][8], const Real_t stress_xx,
   }
 }
 
+//Result: fx_elem[elem*8 + local_node] -- force contributions stored per element-corner
+//Phase B (per-node, TeamPolicy): Scatter-to-gather assembly. For each node, look up all element-corners that touch it (via nodeElemCornerList), and sum their force contributions:
 static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
                                            Real_t *sigyy, Real_t *sigzz,
                                            Real_t *determ, Index_t numElem,
@@ -334,7 +337,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   Kokkos::View<Real_t*, Kokkos::MemoryTraits<Kokkos::Unmanaged>> fy_elem(fy_elem_ptr, numElem8);
   Kokkos::View<Real_t*, Kokkos::MemoryTraits<Kokkos::Unmanaged>> fz_elem(fz_elem_ptr, numElem8);
 
-  Kokkos::parallel_for("IntegrateStressForElems A", RangePolicy(0, numElem),
+  Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int k) {
     const Index_t *const elemToNode = &domain.nodelist(k,0);
     Real_t B[3][8];
@@ -357,10 +360,10 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   int team_size = 1;
   if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
-  execSpace.fence();
+  // execSpace.fence();
   // CkPrintf("First fence in IntegrateStressForElems\n");
-
-  Kokkos::parallel_for ("IntegrateStressForElems B",Kokkos::TeamPolicy((numNode+127)/128,team_size,2),
+  // IntegrateStressForElems B
+  Kokkos::parallel_for (Kokkos::Experimental::require(Kokkos::TeamPolicy<>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
      {
        const Index_t gnode_begin = team.league_rank()*128;
@@ -384,7 +387,8 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
        });
      });
 
-  execSpace.fence();
+  // execSpace.fence();
+  //NOT 
   // CkPrintf("Second fence in IntegrateStressForElems\n");
 }
 
@@ -514,8 +518,11 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   Gamma G;
 
   Int_t do_atomic_dev = do_atomic;
-  
-  Kokkos::parallel_for("CalcFBHourglassForceForElems A", RangePolicy(execSpace, 0, numElem),
+  //CalcFBHourglassForceForElems A
+  std::ostringstream os;
+  os << "CalcFBHourglassForceForElems A ";
+  NVTXTracer(os.str(), NVTXColor::GreenSea);
+  Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int &i2) {
     Real_t *fx_local, *fy_local, *fz_local;
     Real_t hgfx[8];
@@ -659,12 +666,18 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
       Kokkos::atomic_add(&domain.fz(n7si2), hgfx[7]);
     }
   });
-
+  
+  // std::ostringstream os; 
+  os << "[END] CalcFBHourglassForceForElems A ";
+  NVTXTracer(os.str(), NVTXColor::GreenSea);
   if(!do_atomic) {
+    os << "CalcFBHourglassForceForElems B ";
+    NVTXTracer(os.str(), NVTXColor::Turquoise);
     int team_size = 1;
     if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
-     Kokkos::parallel_for ("CalcFBHourglassForceForElems B",Kokkos::TeamPolicy<ExecSpace>(execSpace, (numNode+127)/128,team_size,2),
+    //CalcFBHourglassForceForElems B
+     Kokkos::parallel_for (Kokkos::Experimental::require(Kokkos::TeamPolicy<ExecSpace>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
      {
        const Index_t gnode_begin = team.league_rank()*128;
@@ -688,6 +701,10 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
        });
      });
   }
+
+  // std::ostringstream os;
+  os << "[END] CalcFBHourglassForceForElems ";
+  NVTXTracer(os.str(), NVTXColor::Turquoise);
 }
 
 static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
@@ -710,7 +727,8 @@ static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
   Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_dvdz(dvdz,numElem,8);
 
   int error = 0;
-  Kokkos::parallel_reduce("CalcHourglassControlForElems", RangePolicy(execSpace, 0, numElem),
+  // CalcHourglassControlForElems
+  Kokkos::parallel_reduce(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i, int& err) {
     Real_t x1[8], y1[8], z1[8];
 
@@ -751,7 +769,7 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
     Real_t *sigyy = Allocate<Real_t>(numElem);
     Real_t *sigzz = Allocate<Real_t>(numElem);
     Real_t *determ = Allocate<Real_t>(numElem);
-    execSpace.fence();
+    // execSpace.fence();
 
     InitStressTermsForElems(domain, sigxx, sigyy, sigzz, numElem, execSpace);
 
@@ -765,7 +783,8 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
 static inline void CalcForceForNodes(Domain &domain, ExecSpace execSpace) {
   Index_t numNode = domain.numNode();
 
-  Kokkos::parallel_for("CalcForceForNodes", RangePolicy(execSpace, 0, numNode),
+  //CalcForceForNodes
+  Kokkos::parallel_for( Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNode), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     domain.fx(i) = Real_t(0.0);
     domain.fy(i) = Real_t(0.0);
@@ -2002,6 +2021,7 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
   opts.cost = cost_;
   opts.do_atomic = do_atomic_;
 
+  //TODO: change
   hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, -1));
   //hapiCheck(cudaStreamCreateWithPriority(&computeStream, cudaStreamNonBlocking, 0));
   computeStream = commStream;
