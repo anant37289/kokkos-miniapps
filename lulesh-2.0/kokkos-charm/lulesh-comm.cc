@@ -700,7 +700,7 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
 
 void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   commSpace.fence();  // ensure DMA data is visible before Copy
+   // commSpace.fence();  // ensure DMA data is visible before Copy
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
@@ -762,7 +762,7 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
 
 void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   commSpace.fence();  // ensure DMA data is visible before Copy
+   // commSpace.fence();  // ensure DMA data is visible before Copy
 
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
@@ -811,7 +811,7 @@ void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFiel
 
 void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   commSpace.fence();  // ensure DMA data is visible before Add
+   // commSpace.fence();  // ensure DMA data is visible before Add
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
@@ -853,7 +853,7 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
 
 void DomainChare::processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   commSpace.fence();  // ensure DMA data is visible before Add
+   // commSpace.fence();  // ensure DMA data is visible before Add
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
