@@ -1,5 +1,5 @@
 #Set your Kokkos path to something appropriate
-KOKKOS_PATH = ${HOME}/kokkos
+KOKKOS_PATH =  /u/ajain18/hapi_hip/shogo/charm/kokkos
 KOKKOS_DEVICES = "Serial"
 KOKKOS_ARCH = 
 
@@ -14,7 +14,7 @@ CXXFLAGS = -g -O3 -DUSE_OMP=1 -DRAJA_USE_GETTIME -I./includes -I./
 #CXX = mpicxx
 #CXXFLAGS += -DUSE_MPI=1
 #else
-CXX = clang++
+CXX = g++
 CXXFLAGS += -DUSE_MPI=0
 #endif
 
