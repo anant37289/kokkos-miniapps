@@ -129,6 +129,8 @@ mainmodule lulesh {
             serial "TimeStepCalculation" {
                 if (locDom->cycle() == 0) {
                     startTime = CkWallTimer();
+                    diagCheckNodes(*locDom, computeSpace, "START_CYCLE0",
+                        thisIndex.x, thisIndex.y, thisIndex.z, 0);
                 }
                 if ((opts.showProg != 0) && (opts.quiet == 0) && (flatIndex == 0)) {
                     CkPrintf("cycle = %d, time = %e, dt=%e\n", locDom->cycle(),
@@ -153,6 +155,11 @@ mainmodule lulesh {
             serial "CalcForceForNodes" {
                 Domain& domain = *locDom;
                 CalcForceForNodes(domain, computeSpace);
+
+                if (locDom->cycle() <= 1) {
+                    diagCheckNodes(domain, computeSpace, "AFTER_FORCE",
+                        thisIndex.x, thisIndex.y, thisIndex.z, locDom->cycle());
+                }
 
                 Kokkos::View<Real_t*> fieldData[3];
                 fieldData[0] = domain.m_fx;
@@ -184,7 +191,7 @@ mainmodule lulesh {
                 Domain& domain = *locDom;
                 const Real_t delt = domain.deltatime();
                 Real_t u_cut = domain.u_cut();
-                
+
                 CalcAccelerationForNodes(domain, domain.numNode(), computeSpace);
 
                 ApplyAccelerationBoundaryConditionsForNodes(domain, computeSpace);
@@ -192,6 +199,11 @@ mainmodule lulesh {
                 CalcVelocityForNodes(domain, delt, u_cut, domain.numNode(), computeSpace);
 
                 CalcPositionForNodes(domain, delt, domain.numNode(), computeSpace);
+
+                if (locDom->cycle() <= 1) {
+                    diagCheckNodes(domain, computeSpace, "AFTER_LAGRANGE_NODAL",
+                        thisIndex.x, thisIndex.y, thisIndex.z, locDom->cycle());
+                }
             }
 
             when SBNSendDone() {
@@ -226,6 +238,10 @@ mainmodule lulesh {
 
             serial "AfterPosVelRecv" {
                 Kokkos::fence();
+                if (locDom->cycle() <= 1) {
+                    diagCheckNodes(*locDom, computeSpace, "AFTER_POSVEL_RECV",
+                        thisIndex.x, thisIndex.y, thisIndex.z, locDom->cycle());
+                }
             }
 
             serial "LagrangeElements" {

@@ -17,6 +17,65 @@
 /* readonly */ CProxy_KokkosManager kokkosProxy;
 /* readonly */ CProxy_DomainChare domainProxy;
 
+// Diagnostic: verify node positions match expected initial values
+void diagCheckNodes(Domain& domain, ExecSpace execSpace, const char* label,
+                    int chX, int chY, int chZ, int cycle) {
+  if (cycle > 1) return; // only check for first 2 cycles
+  execSpace.fence();
+  Kokkos::fence(); // global fence to ensure all streams done
+
+  Index_t numNode = domain.numNode();
+  auto h_x = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_x);
+  auto h_y = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_y);
+  auto h_z = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_z);
+  auto h_xd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_xd);
+  auto h_yd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_yd);
+  auto h_zd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_zd);
+  auto h_fx = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_fx);
+  auto h_fy = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_fy);
+  auto h_fz = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_fz);
+
+  // Check a few specific nodes: node 0, a middle node, last node
+  int edgeNodes = domain.sizeX() + 1;
+  int checkNodes[] = {0, 1, edgeNodes, edgeNodes*edgeNodes, numNode/2, numNode-1};
+  int nCheck = 6;
+
+  CkPrintf("[%d,%d,%d] DIAG %s cycle=%d dt=%e:\n", chX, chY, chZ, label, cycle,
+           (double)domain.deltatime());
+  for (int c = 0; c < nCheck && c < numNode; c++) {
+    int n = checkNodes[c];
+    if (n >= numNode) continue;
+    // Decode node index to col/row/plane
+    int plane = n / (edgeNodes * edgeNodes);
+    int rem = n % (edgeNodes * edgeNodes);
+    int row = rem / edgeNodes;
+    int col = rem % edgeNodes;
+    CkPrintf("  node[%d] (c=%d,r=%d,p=%d): x=%e y=%e z=%e xd=%e yd=%e zd=%e fx=%e fy=%e fz=%e\n",
+             n, col, row, plane,
+             (double)h_x(n), (double)h_y(n), (double)h_z(n),
+             (double)h_xd(n), (double)h_yd(n), (double)h_zd(n),
+             (double)h_fx(n), (double)h_fy(n), (double)h_fz(n));
+  }
+
+  // Also check if ANY node has nan or extreme values
+  int badCount = 0;
+  for (int n = 0; n < numNode && badCount < 3; n++) {
+    if (std::isnan(h_x(n)) || std::isnan(h_y(n)) || std::isnan(h_z(n)) ||
+        std::fabs(h_x(n)) > 100.0 || std::fabs(h_y(n)) > 100.0 || std::fabs(h_z(n)) > 100.0) {
+      int plane = n / (edgeNodes * edgeNodes);
+      int rem = n % (edgeNodes * edgeNodes);
+      int row = rem / edgeNodes;
+      int col = rem % edgeNodes;
+      CkPrintf("  BAD node[%d] (c=%d,r=%d,p=%d): x=%e y=%e z=%e xd=%e yd=%e zd=%e\n",
+               n, col, row, plane,
+               (double)h_x(n), (double)h_y(n), (double)h_z(n),
+               (double)h_xd(n), (double)h_yd(n), (double)h_zd(n));
+      badCount++;
+    }
+  }
+  if (badCount == 0) CkPrintf("  (no NaN or extreme values found)\n");
+}
+
 static Real_t* buffer;
 static size_t buffer_size;
 static size_t buffer_offset;
@@ -137,7 +196,7 @@ static inline void InitStressTermsForElems(Domain &domain, Real_t *sigxx,
                                            Real_t *sigyy, Real_t *sigzz,
                                            Index_t numElem, ExecSpace execSpace) {
 
-  Kokkos::parallel_for("InitStressTermsForElems", RangePolicy(0, numElem),
+  Kokkos::parallel_for("InitStressTermsForElems", RangePolicy(execSpace, 0, numElem),
                        KOKKOS_LAMBDA(const Index_t &i) {
     sigxx[i] = sigyy[i] = sigzz[i] = -domain.p(i) - domain.q(i);
   });
@@ -334,7 +393,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   Kokkos::View<Real_t*, Kokkos::MemoryTraits<Kokkos::Unmanaged>> fy_elem(fy_elem_ptr, numElem8);
   Kokkos::View<Real_t*, Kokkos::MemoryTraits<Kokkos::Unmanaged>> fz_elem(fz_elem_ptr, numElem8);
 
-  Kokkos::parallel_for("IntegrateStressForElems A", RangePolicy(0, numElem),
+  Kokkos::parallel_for("IntegrateStressForElems A", RangePolicy(execSpace, 0, numElem),
                        KOKKOS_LAMBDA(const int k) {
     const Index_t *const elemToNode = &domain.nodelist(k,0);
     Real_t B[3][8];
@@ -360,7 +419,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   execSpace.fence();
   // CkPrintf("First fence in IntegrateStressForElems\n");
 
-  Kokkos::parallel_for ("IntegrateStressForElems B",Kokkos::TeamPolicy((numNode+127)/128,team_size,2),
+  Kokkos::parallel_for ("IntegrateStressForElems B",Kokkos::TeamPolicy(execSpace, (numNode+127)/128,team_size,2),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
      {
        const Index_t gnode_begin = team.league_rank()*128;
@@ -759,6 +818,12 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
                             domain.numNode(), execSpace);
 
     CalcHourglassControlForElems(domain, determ, hgcoef, execSpace);
+
+    execSpace.fence();
+    Release(&sigxx);
+    Release(&sigyy);
+    Release(&sigzz);
+    Release(&determ);
   }
 }
 
@@ -1110,8 +1175,37 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
       }
     },error);
 
-    //if(error)
-    //  CkAbort("VolumeError3");
+    if(error) {
+      CkPrintf("[PE%d] VolumeError3: cycle=%d deltatime=%e numElem=%d errors=%d\n",
+               CkMyPe(), domain.cycle(), (double)deltatime, numElem, error);
+      // Print first 5 negative vnew values and some node positions
+      execSpace.fence();
+      auto h_vnew = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_vnew);
+      auto h_x = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_x);
+      auto h_y = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_y);
+      auto h_z = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_z);
+      auto h_volo = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_volo);
+      auto h_v = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_v);
+      auto h_nodelist = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_nodelist);
+      int printed = 0;
+      for (int k = 0; k < numElem && printed < 5; k++) {
+        if (h_vnew(k) <= Real_t(0.0)) {
+          CkPrintf("  elem[%d]: vnew=%e volo=%e v=%e\n", k, (double)h_vnew(k), (double)h_volo(k), (double)h_v(k));
+          // Print node positions for this element
+          for (int n = 0; n < 8; n++) {
+            int gnode = h_nodelist(k, n);
+            CkPrintf("    node[%d]=%d: x=%e y=%e z=%e\n", n, gnode, (double)h_x(gnode), (double)h_y(gnode), (double)h_z(gnode));
+          }
+          printed++;
+        }
+      }
+      // Also print a few good elements for comparison
+      CkPrintf("  --- First 3 elements for comparison ---\n");
+      for (int k = 0; k < 3 && k < numElem; k++) {
+        CkPrintf("  elem[%d]: vnew=%e volo=%e v=%e\n", k, (double)h_vnew(k), (double)h_volo(k), (double)h_v(k));
+      }
+      CkAbort("VolumeError3");
+    }
 
     domain.DeallocateStrains();
   }

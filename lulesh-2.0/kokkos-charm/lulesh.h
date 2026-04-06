@@ -58,6 +58,9 @@ public:
   void finalize();
 };
 
+void diagCheckNodes(Domain& domain, ExecSpace execSpace, const char* label,
+                    int chX, int chY, int chZ, int cycle);
+
 class DomainChare : public CBase_DomainChare {
   DomainChare_SDAG_CODE
 
