@@ -421,14 +421,14 @@ void DomainChare::CommDataRecvInit(Domain& domain, Index_t dx, Index_t dy, Index
       }
 
       if (colMin && planeMin && doRecv) {
-         commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, 0, dx, 0, 1, 0, dy, 1);
+         commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z-1}] =
+            CommData(pmsg, emsg, cmsg, 0, 1, 0, dx, 0, dy, 1);
          ++emsg ;
       }
 
       if (rowMax && colMax) {
-         commDataMap[{thisIndex.x+1, thisIndex.y+1, thisIndex.z}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy - 1, dx*dy, 0, 1, 0, dz, 1);
+         commDataMap[{thisIndex.x+1, thisIndex.y+1, thisIndex.z}] =
+            CommData(pmsg, emsg, cmsg, dx*dy - 1, 1, 0, dx*dy, 0, dz, 1);
          ++emsg ;
       }
 
@@ -439,14 +439,14 @@ void DomainChare::CommDataRecvInit(Domain& domain, Index_t dx, Index_t dy, Index
       }
 
       if (colMax && planeMax) {
-         commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz-1) + dx-1, dx, 0, 1, 0, dy, 1);
+         commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z+1}] =
+            CommData(pmsg, emsg, cmsg, dx*dy*(dz-1) + dx-1, 1, 0, dx, 0, dy, 1);
          ++emsg ;
       }
 
       if (rowMax && colMin) {
-         commDataMap[{thisIndex.x-1, thisIndex.y+1, thisIndex.z}] = 
-            CommData(pmsg, emsg, cmsg, dx*(dy - 1), dx*dy, 0, 1, 0, dz, 1);
+         commDataMap[{thisIndex.x-1, thisIndex.y+1, thisIndex.z}] =
+            CommData(pmsg, emsg, cmsg, dx*(dy - 1), 1, 0, dx*dy, 0, dz, 1);
          ++emsg ;
       }
 
@@ -457,14 +457,14 @@ void DomainChare::CommDataRecvInit(Domain& domain, Index_t dx, Index_t dy, Index
       }
 
       if (colMin && planeMax) {
-         commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz - 1), dx, 0, 1, 0, dy, 1);
+         commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z+1}] =
+            CommData(pmsg, emsg, cmsg, dx*dy*(dz - 1), 1, 0, dx, 0, dy, 1);
          ++emsg ;
       }
 
       if (rowMin && colMax && doRecv) {
-         commDataMap[{thisIndex.x+1, thisIndex.y-1, thisIndex.z}] = 
-            CommData(pmsg, emsg, cmsg, dx-1, dx*dy, 0, 1, 0, dz, 1);
+         commDataMap[{thisIndex.x+1, thisIndex.y-1, thisIndex.z}] =
+            CommData(pmsg, emsg, cmsg, dx-1, 1, 0, dx*dy, 0, dz, 1);
          ++emsg ;
       }
 
@@ -475,8 +475,8 @@ void DomainChare::CommDataRecvInit(Domain& domain, Index_t dx, Index_t dy, Index
       }
 
       if (colMax && planeMin && doRecv) {
-         commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, dx - 1, dx, 0, 1, 0, dy, 1);
+         commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z-1}] =
+            CommData(pmsg, emsg, cmsg, dx - 1, 1, 0, dx, 0, dy, 1);
          ++emsg ;
       }
 
@@ -716,6 +716,7 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
 
 void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
+   commSpace.fence();
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
@@ -777,7 +778,7 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
 
 void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-
+   commSpace.fence();
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
@@ -825,6 +826,7 @@ void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFiel
 
 void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
+   commSpace.fence();
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
@@ -866,6 +868,7 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
 
 void DomainChare::processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
+   commSpace.fence();
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;

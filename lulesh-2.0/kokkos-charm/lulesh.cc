@@ -1142,8 +1142,8 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
       }
     },error);
 
-    //if(error)
-    //  CkAbort("VolumeError3");
+    if(error)
+     CkAbort("VolumeError3");
 
     domain.DeallocateStrains();
   }
