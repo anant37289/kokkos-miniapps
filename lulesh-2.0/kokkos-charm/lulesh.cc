@@ -358,8 +358,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   int team_size = 1;
   if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
-  // execSpace.fence();
-  // CkPrintf("First fence in IntegrateStressForElems\n");
+  execSpace.fence(); // Required: Phase A writes fx_elem, Phase B reads it
   // IntegrateStressForElems B
   Kokkos::parallel_for (Kokkos::Experimental::require(Kokkos::TeamPolicy<>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
@@ -671,6 +670,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   NVTXTracer(os.str(), NVTXColor::GreenSea);
   os.clear();
   if(!do_atomic) {
+    execSpace.fence(); // Required: Phase A writes fx_elem, Phase B reads it
     os << "CalcFBHourglassForceForElems B ";
     NVTXTracer(os.str(), NVTXColor::Turquoise);
     os.clear();
@@ -808,7 +808,8 @@ static inline void CalcForceForNodes(Domain &domain, ExecSpace execSpace) {
 
 static inline void CalcAccelerationForNodes(Domain &domain, Index_t numNode, ExecSpace execSpace) {
 
-  Kokkos::parallel_for("CalcAccelerationForNodes", RangePolicy(execSpace, 0, numNode),
+  //CalcAccelerationForNodes
+  Kokkos::parallel_for( Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNode), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     domain.xdd(i) = domain.fx(i) / domain.nodalMass(i);
     domain.ydd(i) = domain.fy(i) / domain.nodalMass(i);
@@ -821,21 +822,21 @@ static inline void ApplyAccelerationBoundaryConditionsForNodes(Domain &domain, E
   Index_t numNodeBC = (size + 1) * (size + 1);
 
   if (!domain.symmXempty() != 0) {
-    Kokkos::parallel_for("ApplyAccelerationBoundaryConditionsForNodes A", RangePolicy(execSpace, 0, numNodeBC),
+    Kokkos::parallel_for("ApplyAccelerationBoundaryConditionsForNodes A", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNodeBC), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i) {
       domain.xdd(domain.symmX(i)) = Real_t(0.0);
     });
   }
 
   if (!domain.symmYempty() != 0) {
-    Kokkos::parallel_for("ApplyAccelerationBoundaryConditionsForNodes B", RangePolicy(execSpace, 0, numNodeBC),
+    Kokkos::parallel_for("ApplyAccelerationBoundaryConditionsForNodes B", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNodeBC), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i) {
       domain.ydd(domain.symmY(i)) = Real_t(0.0);
     });
   }
 
   if (!domain.symmZempty() != 0) {
-    Kokkos::parallel_for("ApplyAccelerationBoundaryConditionsForNodes C", RangePolicy(execSpace, 0, numNodeBC),
+    Kokkos::parallel_for("ApplyAccelerationBoundaryConditionsForNodes C", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNodeBC),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                          KOKKOS_LAMBDA(const int i) {
       domain.zdd(domain.symmZ(i)) = Real_t(0.0);
     });
@@ -846,7 +847,7 @@ static inline void CalcVelocityForNodes(Domain &domain, const Real_t dt,
                                         const Real_t u_cut, Index_t numNode,
                                         ExecSpace execSpace) {
 
-  Kokkos::parallel_for("CalcVelocityForNodes", RangePolicy(execSpace, 0, numNode),
+  Kokkos::parallel_for("CalcVelocityForNodes", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNode),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int i) {
     Real_t xdtmp, ydtmp, zdtmp;
 
@@ -869,7 +870,7 @@ static inline void CalcVelocityForNodes(Domain &domain, const Real_t dt,
 
 static inline void CalcPositionForNodes(Domain &domain, const Real_t dt,
                                         Index_t numNode, ExecSpace execSpace) {
-  Kokkos::parallel_for("CalcPositionForNodes", RangePolicy(execSpace, 0, numNode),
+  Kokkos::parallel_for("CalcPositionForNodes", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNode),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     domain.x(i) += domain.xd(i) * dt;
     domain.y(i) += domain.yd(i) * dt;

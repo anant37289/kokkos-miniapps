@@ -910,5 +910,5 @@ void DomainChare::processRemoteForce(uint32_t ref, int x, int y, int z, int xfer
          //       cdata.size[0], commSpace);
       }
    }
-   commSpace.fence();
+   // commSpace.fence();
 }
