@@ -111,6 +111,7 @@ public:
   void processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf);
 
   void applyBufferedPosVel();
+  void applyBufferedForce();
 
   Domain *locDom;
   uint32_t iter;
@@ -135,6 +136,8 @@ public:
 
   // Buffer for deferred PosVel processing (deterministic ordering)
   std::vector<std::tuple<int,int,int>> posVelRecvBuffer;
+  // Buffer for deferred SBN force processing (deterministic ordering)
+  std::vector<std::tuple<int,int,int>> forceRecvBuffer;
 
   hapiStream_t commStream, computeStream;
   ExecSpace commSpace, computeSpace;

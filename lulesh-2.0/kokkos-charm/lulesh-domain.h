@@ -147,6 +147,33 @@ public:
   // ALLOCATION
   //
 
+
+  Real_t* buffer;
+  size_t buffer_size;
+  size_t buffer_offset;
+
+   void ResizeBuffer(const size_t size);
+   //  {
+   // buffer_offset = 0;
+   // if(size/sizeof(Real_t)+1 > buffer_size) {
+   //    buffer_size = size/sizeof(Real_t)+1;
+   //    Release<Real_t>(&buffer);
+   //    buffer = Allocate<Real_t>(buffer_size);
+   // }
+   // }
+
+   template<class Type>
+   Type* AllocateFromBuffer(const Index_t& count); 
+   
+   // {
+   // const Index_t offset = (count*sizeof(Type)+sizeof(Real_t)-1)/sizeof(Real_t);
+   // Real_t* ptr = buffer + buffer_offset;
+   // buffer_offset += ((offset+511)/512)*512;
+   // return static_cast<Type*>(ptr);
+   // }
+
+
+
   void AllocateNodePersistent(Int_t numNode) // Node-centered
   {
     Kokkos::resize(m_x,numNode); // coordinates
@@ -220,17 +247,23 @@ public:
 
   void AllocateGradients(Int_t numElem, Int_t allElem) {
 
-    // CkPrintf("[%d] Allocating gradients: numElem=%d allElem=%d\n", CkMyPe(), numElem, allElem) ;
+    CkPrintf("[%d] Allocating gradients: numElem=%d allElem=%d\n", CkMyPe(), numElem, allElem) ;
 
     // Position gradients
-    Kokkos::resize(m_delx_xi,numElem);
-    Kokkos::resize(m_delx_eta,numElem);
-    Kokkos::resize(m_delx_zeta,numElem);
+    if(m_delx_xi.size()!=numElem)
+    {
+      Kokkos::resize(m_delx_xi,numElem);
+      Kokkos::resize(m_delx_eta,numElem);
+      Kokkos::resize(m_delx_zeta,numElem);
+    }
 
     // Velocity gradients
-    Kokkos::resize(m_delv_xi,allElem);
-    Kokkos::resize(m_delv_eta,allElem);
-    Kokkos::resize(m_delv_zeta,allElem);
+    if(m_delv_xi.size()!=allElem)
+    {
+      Kokkos::resize(m_delv_xi,allElem);
+      Kokkos::resize(m_delv_eta,allElem);
+      Kokkos::resize(m_delv_zeta,allElem);
+    }
   }
 
   void DeallocateGradients() {

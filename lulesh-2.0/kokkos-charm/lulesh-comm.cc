@@ -588,7 +588,7 @@ void DomainChare::CommSend(Domain& domain, int msgType,
                    domain.commDataSendView, 
                    offset + fi * cdata.size[0] * cdata.size[1], 
                    cdata.dst_stride[0], cdata.dst_stride[1], 
-                   cdata.size[0], cdata.size[1], commSpace);//TODO:: sync for correctness, i think work has been on computeSpace before this
+                   cdata.size[0], cdata.size[1], commSpace);//TODO:: sync.use event for correctness, i think work has been on computeSpace before this
          }
       } else {
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
@@ -787,7 +787,7 @@ void DomainChare::applyBufferedPosVel() {
                cdata.size[0], commSpace);
          }
       }
-      commSpace.fence();  // ensure each batch completes before the next overwrites
+      // commSpace.fence();
    }
 
    posVelRecvBuffer.clear();
@@ -886,51 +886,62 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
 /******************************************/
 
 void DomainChare::processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
+   // Buffer sender coords; actual Add is deferred to applyBufferedForce()
+   // so that contributions are accumulated in face→edge→corner order,
+   // matching MPI's deterministic FP accumulation sequence.
+   forceRecvBuffer.push_back({x, y, z});
+}
+
+void DomainChare::applyBufferedForce() {
    Domain& domain = *locDom;
-   // commSpace.fence();
+   const int xferFields = 3;
+   const Index_t maxPlaneComm = xferFields * domain.maxPlaneSize();
+   const Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize();
 
-   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
-   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
-
-   CommData cdata = commDataRecvSBN[{x, y, z}];
-   Index_t offsetX = x - thisIndex.x;
-   Index_t offsetY = y - thisIndex.y;
-   Index_t offsetZ = z - thisIndex.z;
+   // Sort face (1 non-zero offset) → edge (2) → corner (3), matching MPI order.
+   std::sort(forceRecvBuffer.begin(), forceRecvBuffer.end(),
+      [this](const std::tuple<int,int,int>& a, const std::tuple<int,int,int>& b) {
+         int na = (std::get<0>(a) != thisIndex.x) + (std::get<1>(a) != thisIndex.y) + (std::get<2>(a) != thisIndex.z);
+         int nb = (std::get<0>(b) != thisIndex.x) + (std::get<1>(b) != thisIndex.y) + (std::get<2>(b) != thisIndex.z);
+         return na < nb;
+      });
 
    Kokkos::View<Real_t*> fieldData[3];
    fieldData[0] = domain.m_fx;
    fieldData[1] = domain.m_fy;
    fieldData[2] = domain.m_fz;
 
-   int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
+   for (auto& sender : forceRecvBuffer) {
+      const int x = std::get<0>(sender);
+      const int y = std::get<1>(sender);
+      const int z = std::get<2>(sender);
 
-   if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
-         offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
-      for (Index_t fi=0 ; fi<xferFields; ++fi) {
-         Kokkos::View<Real_t*> &dest = fieldData[fi] ;
-         Add2D(domain.commDataRecvView, offset + fi * cdata.size[0] * cdata.size[1],
-               1, cdata.size[0],
-               dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-               cdata.size[0], cdata.size[1], commSpace);
-         // Add2D(dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-         //       domain.commDataRecvView, 
-         //       offset + fi * cdata.size[0] * cdata.size[1],
-         //       cdata.src_stride[0], cdata.src_stride[1],
-         //       cdata.size[0], cdata.size[1], commSpace);
-      }
-   } else {
-      for (Index_t fi=0 ; fi<xferFields; ++fi) {
-         Kokkos::View<Real_t*> &dest = fieldData[fi] ;
-         Add1D(domain.commDataRecvView, offset + fi * cdata.size[0],
-               1,
-               dest, cdata.offset, cdata.dst_stride[0],
-               cdata.size[0], commSpace);
-         // Add1D(dest, cdata.offset, cdata.dst_stride[0],
-         //       domain.commDataRecvView, 
-         //       offset + fi * cdata.size[0],
-         //       cdata.src_stride[0],
-         //       cdata.size[0], commSpace);
+      CommData cdata = commDataRecvSBN[{x, y, z}];
+      const Index_t offsetX = x - thisIndex.x;
+      const Index_t offsetY = y - thisIndex.y;
+      const Index_t offsetZ = z - thisIndex.z;
+
+      const int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm
+                       + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
+
+      if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
+            offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
+         for (Index_t fi = 0; fi < xferFields; ++fi) {
+            Add2D(domain.commDataRecvView, offset + fi * cdata.size[0] * cdata.size[1],
+                  1, cdata.size[0],
+                  fieldData[fi], cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
+                  cdata.size[0], cdata.size[1], commSpace);
+         }
+      } else {
+         for (Index_t fi = 0; fi < xferFields; ++fi) {
+            Add1D(domain.commDataRecvView, offset + fi * cdata.size[0],
+                  1,
+                  fieldData[fi], cdata.offset, cdata.dst_stride[0],
+                  cdata.size[0], commSpace);
+         }
       }
    }
-   // commSpace.fence();
+
+   commSpace.fence();
+   forceRecvBuffer.clear();
 }

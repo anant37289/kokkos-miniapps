@@ -16,35 +16,34 @@
 /* readonly */ CProxy_Main mainProxy;
 /* readonly */ CProxy_KokkosManager kokkosProxy;
 /* readonly */ CProxy_DomainChare domainProxy;
+/* readonly */ int do_atomic;
 
-static Real_t* buffer;
-static size_t buffer_size;
-static size_t buffer_offset;
-static int do_atomic;
+void Domain::ResizeBuffer(const size_t size)
+{
+   buffer_offset = 0;
+   if(size/sizeof(Real_t)+1 > buffer_size) {
+      buffer_size = size/sizeof(Real_t)+1;
+      Release<Real_t>(&buffer);
+      buffer = Allocate<Real_t>(buffer_size);
+   }
+   }
 
-void ResizeBuffer(const size_t size) {
-  buffer_offset = 0;
-  if(size/sizeof(Real_t)+1 > buffer_size) {
-    buffer_size = size/sizeof(Real_t)+1;
-    Release<Real_t>(&buffer);
-    buffer = Allocate<Real_t>(buffer_size);
-  }
-}
-
-template<class Type>
-Type* AllocateFromBuffer(const Index_t& count) {
+  template<class Type>
+  Type* Domain::AllocateFromBuffer(const Index_t& count) 
+  {
   const Index_t offset = (count*sizeof(Type)+sizeof(Real_t)-1)/sizeof(Real_t);
   Real_t* ptr = buffer + buffer_offset;
   buffer_offset += ((offset+511)/512)*512;
   return static_cast<Type*>(ptr);
-}
+  }
 
 void PrintState(Domain& locDom, int myRank) {
   Kokkos::fence();
   int N = locDom.numNode();
   int E = locDom.numElem();
-  int show = (N < 5) ? N : 4;
-  int eshow = (E < 5) ? E : 4;
+  int show = (N < 100) ? N : 50;
+  int eshow = (E < 100) ? E : 50;
+  
   auto hx  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_x);
   auto hy  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_y);
   auto hz  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_z);
@@ -61,23 +60,30 @@ void PrintState(Domain& locDom, int myRank) {
   auto hfz = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_fz);
   printf("[charm rank=%d cycle=%d] dt=%.10e time=%.10e\n", myRank, locDom.cycle(), 
          double(locDom.deltatime()), double(locDom.time()));
-printf("  x : "); for(int i=0;i<show/2;i++) printf("%.10e ",hx(i)); printf("..."); for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hx(i)); printf("\n");
-      printf("  y : "); for(int i=0;i<show;i++) printf("%.10e ",hy(i));printf("..."); for(int i=N-1-show/2;i<=N-1;i++)printf("%.10e ",hy(i));printf("\n");
-      printf("  z : "); for(int i=0;i<show;i++) printf("%.10e ",hz(i));printf("..."); for(int i=N-1-show/2;i<=N-1;i++)printf("%.10e ",hz(i));printf("\n");
-      printf("  xd: "); for(int i=0;i<show;i++) printf("%.10e ",hxd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hxd(i));printf("\n");
-      printf("  yd: "); for(int i=0;i<show;i++) printf("%.10e ",hyd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hyd(i));printf("\n");
-      printf("  zd: "); for(int i=0;i<show;i++) printf("%.10e ",hzd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hzd(i));printf("\n");
-      printf("  e : "); for(int i=0;i<eshow;i++) printf("%.10e ",he(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",he(i));printf("\n");
-      printf("  p : "); for(int i=0;i<eshow;i++) printf("%.10e ",hp(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hp(i));printf("\n");
-      printf("  q : "); for(int i=0;i<eshow;i++) printf("%.10e ",hq(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hq(i));printf("\n");
-      printf("  v : "); for(int i=0;i<eshow;i++) printf("%.10e ",hv(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hv(i));printf("\n");
+      printf("  x : "); for(int i=0;i<show/2;i++) printf("%.10e ",hx(i)); printf("..."); for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hx(i)); printf("\n");
+      printf("  y : "); for(int i=0;i<show/2;i++) printf("%.10e ",hy(i));printf("..."); for(int i=N-1-show/2;i<=N-1;i++)printf("%.10e ",hy(i));printf("\n");
+      printf("  z : "); for(int i=0;i<show/2;i++) printf("%.10e ",hz(i));printf("..."); for(int i=N-1-show/2;i<=N-1;i++)printf("%.10e ",hz(i));printf("\n");
+      printf("  xd: "); for(int i=0;i<show/2;i++) printf("%.10e ",hxd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hxd(i));printf("\n");
+      printf("  yd: "); for(int i=0;i<show/2;i++) printf("%.10e ",hyd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hyd(i));printf("\n");
+      printf("  zd: "); for(int i=0;i<show/2;i++) printf("%.10e ",hzd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hzd(i));printf("\n");
+      printf("  e : "); for(int i=0;i<eshow/2;i++) printf("%.10e ",he(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",he(i));printf("\n");
+      printf("  p : "); for(int i=0;i<eshow/2;i++) printf("%.10e ",hp(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hp(i));printf("\n");
+      printf("  q : "); for(int i=0;i<eshow/2;i++) printf("%.10e ",hq(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hq(i));printf("\n");
+      printf("  v : "); for(int i=0;i<eshow/2;i++) printf("%.10e ",hv(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hv(i));printf("\n");
       // printf("  vn: "); for(int i=0;i<eshow;i++) printf("%.10e ",hvn(i));for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e\n",hvn(i));
-      printf("  fx: "); for(int i=0;i<show;i++) printf("%.10e ",hfx(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfx(i));printf("\n");
-      printf("  fy: "); for(int i=0;i<show;i++) printf("%.10e ",hfy(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfy(i));printf("\n");
-      printf("  fz: "); for(int i=0;i<show;i++) printf("%.10e ",hfz(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfz(i));printf("\n");
+      printf("  fx: "); for(int i=0;i<show/2;i++) printf("%.10e ",hfx(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfx(i));printf("\n");
+      //sum all the fx
+      double chksum = 0;
+      for(int i=0;i<hfx.size();i++)
+      {
+        chksum+=hfx(i);
+      }
+      printf("chksum %.10e\n", chksum);
+      printf("  fy: "); for(int i=0;i<show/2;i++) printf("%.10e ",hfy(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfy(i));printf("\n");
+      printf("  fz: "); for(int i=0;i<show/2;i++) printf("%.10e ",hfz(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfz(i));printf("\n");
       Real_t minvn = hv(0); 
-  for(int i=1;i<E;i++) if(hvn(i)<minvn) minvn=hvn(i);
-  printf("  min_vnew=%.10e\n", double(minvn));
+      for(int i=1;i<E;i++) if(hvn(i)<minvn) minvn=hvn(i);
+      printf("  min_vnew=%.10e\n", double(minvn));
 }
 
 Real_t DomainChare::TimeStepCalculateLocal(Domain &domain) {
@@ -368,9 +374,9 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
                                            Real_t *determ, Index_t numElem,
                                            Index_t numNode, ExecSpace execSpace) {
   Index_t numElem8 = numElem * 8;
-  Real_t *fx_elem_ptr = AllocateFromBuffer<Real_t>(numElem8);
-  Real_t *fy_elem_ptr = AllocateFromBuffer<Real_t>(numElem8);
-  Real_t *fz_elem_ptr = AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *fx_elem_ptr = domain.AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *fy_elem_ptr = domain.AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *fz_elem_ptr = domain.AllocateFromBuffer<Real_t>(numElem8);
   
   Kokkos::View<Real_t*, Kokkos::MemoryTraits<Kokkos::Unmanaged>> fx_elem(fx_elem_ptr, numElem8);
   Kokkos::View<Real_t*, Kokkos::MemoryTraits<Kokkos::Unmanaged>> fy_elem(fy_elem_ptr, numElem8);
@@ -546,9 +552,9 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   Real_t *fz_elem;
 
   if(do_atomic == 0) {
-    fx_elem = AllocateFromBuffer<Real_t>(numElem8);
-    fy_elem = AllocateFromBuffer<Real_t>(numElem8);
-    fz_elem = AllocateFromBuffer<Real_t>(numElem8);
+    fx_elem = domain.AllocateFromBuffer<Real_t>(numElem8);
+    fy_elem = domain.AllocateFromBuffer<Real_t>(numElem8);
+    fz_elem = domain.AllocateFromBuffer<Real_t>(numElem8);
   }
 
   Gamma G;
@@ -753,12 +759,12 @@ static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
   Index_t numElem = domain.numElem();
   Index_t numElem8 = numElem * 8;
 
-  Real_t *dvdx = AllocateFromBuffer<Real_t>(numElem8);
-  Real_t *dvdy = AllocateFromBuffer<Real_t>(numElem8);
-  Real_t *dvdz = AllocateFromBuffer<Real_t>(numElem8);
-  Real_t *x8n = AllocateFromBuffer<Real_t>(numElem8);
-  Real_t *y8n = AllocateFromBuffer<Real_t>(numElem8);
-  Real_t *z8n = AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *dvdx = domain.AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *dvdy = domain.AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *dvdz = domain.AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *x8n = domain.AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *y8n = domain.AllocateFromBuffer<Real_t>(numElem8);
+  Real_t *z8n = domain.AllocateFromBuffer<Real_t>(numElem8);
   Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_x8n(x8n,numElem,8);
   Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_y8n(y8n,numElem,8);
   Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_z8n(z8n,numElem,8);
@@ -810,14 +816,14 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
     // Single ResizeBuffer for the entire call chain:
     //  - 4 x numElem for sigxx/sigyy/sigzz/determ (persistent across sub-calls)
     //  - max scratch is CalcHourglassControlForElems: (do_atomic?6:9) x numElem8
-    ResizeBuffer((numElem * sizeof(Real_t) + 4096) * 4 +
+    domain.ResizeBuffer((numElem * sizeof(Real_t) + 4096) * 4 +
                  (numElem8 * sizeof(Real_t) + 4096) * (do_atomic ? 6 : 9));
 
-    Real_t *sigxx  = AllocateFromBuffer<Real_t>(numElem);
-    Real_t *sigyy  = AllocateFromBuffer<Real_t>(numElem);
-    Real_t *sigzz  = AllocateFromBuffer<Real_t>(numElem);
-    Real_t *determ = AllocateFromBuffer<Real_t>(numElem);
-    size_t scratch_start = buffer_offset;
+    Real_t *sigxx  = domain.AllocateFromBuffer<Real_t>(numElem);
+    Real_t *sigyy  = domain.AllocateFromBuffer<Real_t>(numElem);
+    Real_t *sigzz  = domain.AllocateFromBuffer<Real_t>(numElem);
+    Real_t *determ = domain.AllocateFromBuffer<Real_t>(numElem);
+    size_t scratch_start = domain.buffer_offset;
 
     InitStressTermsForElems(domain, sigxx, sigyy, sigzz, numElem, execSpace);
 
@@ -825,7 +831,7 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
                             domain.numNode(), execSpace);
 
     // Reclaim IntegrateStressForElems scratch; sigxx/sigyy/sigzz/determ stay valid
-    buffer_offset = scratch_start;
+    domain.buffer_offset = scratch_start;
 
     CalcHourglassControlForElems(domain, determ, hgcoef, execSpace);
   }
@@ -1105,13 +1111,13 @@ CalcElemVelocityGradient(const Real_t *const xvel, const Real_t *const yvel,
 
 void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, ExecSpace execSpace) {
 
-  Kokkos::View<Real_t*> volume_s("volume", numElem);
-  Kokkos::View<Real_t**> x_local_s("x", numElem, 8);
-  Kokkos::View<Real_t**> y_local_s("y", numElem, 8);
-  Kokkos::View<Real_t**> z_local_s("z", numElem, 8);
-  Kokkos::fence();
+  // Kokkos::View<Real_t*> volume_s("volume", numElem);
+  // Kokkos::View<Real_t**> x_local_s("x", numElem, 8);
+  // Kokkos::View<Real_t**> y_local_s("y", numElem, 8);
+  // Kokkos::View<Real_t**> z_local_s("z", numElem, 8);
+  // Kokkos::fence();
 
-  Kokkos::parallel_for("CalcKinematicsForElems", RangePolicy(execSpace, 0, numElem),
+  Kokkos::parallel_for("CalcKinematicsForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int k) {
     Real_t B[3][8];
     Real_t D[6];
@@ -1130,15 +1136,15 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     CollectDomainNodesToElemNodes(domain, elemToNode, x_local, y_local,
                                   z_local);
 
-    for(int i=0;i<8;i++)
-    {
-      x_local_s(k, i) = x_local[i];
-      y_local_s(k, i) = y_local[i];
-      z_local_s(k, i) = z_local[i];
-    }
+    // for(int i=0;i<8;i++)
+    // {
+    //   x_local_s(k, i) = x_local[i];
+    //   y_local_s(k, i) = y_local[i];
+    //   z_local_s(k, i) = z_local[i];
+    // }
 
     volume = CalcElemVolume(x_local, y_local, z_local);
-    volume_s(k) = volume; 
+    // volume_s(k) = volume; 
     relativeVolume = volume / domain.volo(k);
     domain.vnew(k) = relativeVolume;
     domain.delv(k) = relativeVolume - domain.v(k);
@@ -1169,31 +1175,31 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     domain.dzz(k) = D[2];
   });
 
-  if(domain.flatIndex==0)
-   printf("numelem %d\n", numElem);
-  auto h_volume_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), volume_s);
-  auto h_x_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), x_local_s);
-  auto h_y_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), y_local_s);
-  auto h_z_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), z_local_s);
+  // if(domain.flatIndex==0)
+  //  printf("numelem %d\n", numElem);
+  // auto h_volume_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), volume_s);
+  // auto h_x_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), x_local_s);
+  // auto h_y_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), y_local_s);
+  // auto h_z_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), z_local_s);
   
-  if(domain.flatIndex==0)
-  {
-    for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
-    {
-      printf("%.10e ", h_volume_s(i));
-    }
-    printf("\n");
-  }
+  // if(domain.flatIndex==0)
+  // {
+  //   for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+  //   {
+  //     printf("%.10e ", h_volume_s(i));
+  //   }
+  //   printf("\n");
+  // }
 
-  if(domain.flatIndex==0)
-  {
-    for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
-    {
-      for(int j = 0;j<8;j++)
-        printf("(%.10e, %.10e, %.10e)", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
-      printf("\n");
-    }
-  }
+  // if(domain.flatIndex==0)
+  // {
+  //   for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+  //   {
+  //     for(int j = 0;j<8;j++)
+  //       printf("(%.10e, %.10e, %.10e)", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
+  //     printf("\n");
+  //   }
+  // }
 
 }
 
@@ -1776,22 +1782,22 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
   Real_t emin = domain.emin();
   Real_t rho0 = domain.refdens();
 
-  ResizeBuffer((numElemReg*sizeof(Real_t)+4096)*16);
+  domain.ResizeBuffer((numElemReg*sizeof(Real_t)+4096)*16);
 
-  Real_t *e_old = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *delvc = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *p_old = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *q_old = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *compression = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *compHalfStep = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *qq_old = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *ql_old = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *work = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *p_new = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *e_new = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *q_new = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *bvc = AllocateFromBuffer<Real_t>(numElemReg);
-  Real_t *pbvc = AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *e_old = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *delvc = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *p_old = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *q_old = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *compression = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *compHalfStep = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *qq_old = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *ql_old = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *work = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *p_new = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *e_new = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *q_new = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *bvc = domain.AllocateFromBuffer<Real_t>(numElemReg);
+  Real_t *pbvc = domain.AllocateFromBuffer<Real_t>(numElemReg);
 
   for (Int_t j = 0; j < rep; j++) {
     Kokkos::parallel_for("EvalEOSForElems A", RangePolicy(execSpace, 0, numElemReg),

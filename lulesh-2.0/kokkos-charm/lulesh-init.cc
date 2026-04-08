@@ -129,11 +129,14 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
 // set pointers to (potentially) "new'd" arrays to null to
 // simplify deallocation.
 //
-   m_regNumList(0)
+   m_regNumList(0),
 //   m_nodeElemStart(0),
 //   m_nodeElemCornerList(0),
    //m_regElemSize(0),
    //m_regElemlist(0)
+   buffer(NULL),
+   buffer_size(0),
+   buffer_offset(0)
 {
 
    Index_t edgeElems = nx ;
