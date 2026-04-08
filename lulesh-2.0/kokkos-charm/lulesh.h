@@ -1,8 +1,8 @@
 #ifndef LULESH_H
 #define LULESH_H
 
-#define DEBUG_COMM 1      // verbose per-message prints (changes timing!)
-#define DEBUG_COMM_LITE 1  // lightweight phase-transition prints only
+#define DEBUG_COMM 0      // verbose per-message prints (changes timing!)
+#define DEBUG_COMM_LITE 0  // lightweight phase-transition prints only
 #if DEBUG_COMM
 #define DBG_PRINTF(...) CkPrintf(__VA_ARGS__)
 #else
@@ -110,6 +110,8 @@ public:
 
   void processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf);
 
+  void applyBufferedPosVel();
+
   Domain *locDom;
   uint32_t iter;
   int flatIndex;
@@ -130,6 +132,9 @@ public:
   CommDataMap_t commDataRecvPosVel;
   CommDataMap_t commDataRecvMonoQ;
   CommDataMap_t commDataRecvSBN;
+
+  // Buffer for deferred PosVel processing (deterministic ordering)
+  std::vector<std::tuple<int,int,int>> posVelRecvBuffer;
 
   hapiStream_t commStream, computeStream;
   ExecSpace commSpace, computeSpace;

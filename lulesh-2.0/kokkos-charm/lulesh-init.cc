@@ -104,7 +104,7 @@ return CalcElemVolume( x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7],
 /////////////////////////////////////////////////////////////////////
 Domain::Domain(Int_t numRanks, Index_t colLoc,
                Index_t rowLoc, Index_t planeLoc,
-               Index_t nx, int tp, int nr, int balance, Int_t cost)
+               Index_t nx, int tp, int nr, int balance, Int_t cost, Int_t flatIndex)
    :
    m_e_cut(Real_t(1.0e-7)),
    m_p_cut(Real_t(1.0e-7)),
@@ -260,6 +260,20 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
          h_nodalMass(idx) += volume / Real_t(8.0) ;
       }
    }
+   this->flatIndex = flatIndex;
+
+   if(flatIndex==0)
+   {
+     for(int i=0;i < min(h_volo.size(), (size_t)3);i++)
+       printf("%.10e ", h_volo(i));
+
+    printf(" ... ");
+
+    for(int i=h_volo.size() - 3;i<h_volo.size();i++)
+      printf("%.10e ", h_volo(i));
+   }
+
+    printf("\n");
 
    Kokkos::deep_copy(m_volo, h_volo);
    Kokkos::deep_copy(m_elemMass, h_elemMass);
@@ -583,8 +597,9 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
       regElemSize(r)++;
    }
    // Second, allocate each region index set
+   h_row_map(0) = 0;
    for (Index_t i=0 ; i<numReg() ; ++i) {
-      h_row_map(i+1) = regElemSize(i);
+      h_row_map(i+1) = h_row_map(i) + regElemSize(i);
       regElemSize(i) = 0;
    }
    // Third, fill index sets

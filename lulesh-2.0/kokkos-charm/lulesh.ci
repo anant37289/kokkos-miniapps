@@ -235,7 +235,8 @@ mainmodule lulesh {
             }
 
             serial "AfterPosVelRecv" {
-                // Kokkos::fence();
+                applyBufferedPosVel();
+                Kokkos::fence();
             }
 
             serial "LagrangeElements" {
@@ -290,6 +291,9 @@ mainmodule lulesh {
                 UpdateVolumesForElems(domain, domain.v_cut(), domain.numElem(), computeSpace);
 
                 CalcTimeConstraintsForElems(domain, computeSpace);
+
+                if(flatIndex==0)
+                    PrintState(*locDom, flatIndex);
 
                 iter++;
                 DBG_LITE("[%d,%d,%d] DONE iter=%u\n",

@@ -2,6 +2,7 @@
 
 
 #include <string.h>
+#include <algorithm>
 
 /* Comm Routines */
 
@@ -715,70 +716,88 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
 /******************************************/
 
 void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
+   // Buffer the sender coords; actual unpacking is deferred to applyBufferedPosVel()
+   // to ensure deterministic face→edge→corner ordering (matching MPI).
+   posVelRecvBuffer.push_back({x, y, z});
+}
+
+// Helper: compute neighbor type priority from offset.
+// face (1 non-zero) = 0, edge (2 non-zero) = 1, corner (3 non-zero) = 2.
+static int neighborPriority(int ox, int oy, int oz) {
+   return (ox != 0) + (oy != 0) + (oz != 0) - 1;
+}
+
+void DomainChare::applyBufferedPosVel() {
    Domain& domain = *locDom;
-   commSpace.fence();
+   int xferFields = 6;
+   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize();
+   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize();
 
-   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
-   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
-
-   CommData& cdata = commDataRecvPosVel[{x, y, z}];
-   Index_t offsetX = x - thisIndex.x;
-   Index_t offsetY = y - thisIndex.y;
-   Index_t offsetZ = z - thisIndex.z;
+   // Sort by neighbor type: faces (priority 0) first, edges (1), corners (2) last.
+   // This matches the MPI unpack order where edges overwrite faces and corners
+   // overwrite edges for overlapping nodes.
+   std::sort(posVelRecvBuffer.begin(), posVelRecvBuffer.end(),
+      [this](const std::tuple<int,int,int>& a, const std::tuple<int,int,int>& b) {
+         int pa = neighborPriority(std::get<0>(a) - thisIndex.x,
+                                   std::get<1>(a) - thisIndex.y,
+                                   std::get<2>(a) - thisIndex.z);
+         int pb = neighborPriority(std::get<0>(b) - thisIndex.x,
+                                   std::get<1>(b) - thisIndex.y,
+                                   std::get<2>(b) - thisIndex.z);
+         return pa < pb;
+      });
 
    Kokkos::View<Real_t*> fieldData[6];
-   fieldData[0] = domain.m_x ;
-   fieldData[1] = domain.m_y ;
-   fieldData[2] = domain.m_z ;
-   fieldData[3] = domain.m_xd ;
-   fieldData[4] = domain.m_yd ;
-   fieldData[5] = domain.m_zd ;
-   //int xferFields = 6 ;
+   fieldData[0] = domain.m_x;
+   fieldData[1] = domain.m_y;
+   fieldData[2] = domain.m_z;
+   fieldData[3] = domain.m_xd;
+   fieldData[4] = domain.m_yd;
+   fieldData[5] = domain.m_zd;
 
-   int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
+   for (auto& sender : posVelRecvBuffer) {
+      int x = std::get<0>(sender);
+      int y = std::get<1>(sender);
+      int z = std::get<2>(sender);
 
-   if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
-         offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
-      for (Index_t fi=0 ; fi<xferFields; ++fi) {
-         Kokkos::View<Real_t*> &dest = fieldData[fi] ;
-         Copy2D(domain.commDataRecvView, 
-            offset + fi * cdata.size[0] * cdata.size[1],
-            1, cdata.size[0],
-            dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-            cdata.size[0], cdata.size[1], commSpace
-            );
-         // Copy2D(dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-         //       domain.commDataRecvView, 
-         //       offset + fi * cdata.size[0] * cdata.size[1],
-         //       1, cdata.size[0],
-         //       cdata.size[0], cdata.size[1], commSpace
-         //       );
+      CommData& cdata = commDataRecvPosVel[{x, y, z}];
+      Index_t offsetX = x - thisIndex.x;
+      Index_t offsetY = y - thisIndex.y;
+      Index_t offsetZ = z - thisIndex.z;
+
+      int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
+
+      if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
+            offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
+         for (Index_t fi = 0; fi < xferFields; ++fi) {
+            Kokkos::View<Real_t*>& dest = fieldData[fi];
+            Copy2D(domain.commDataRecvView,
+               offset + fi * cdata.size[0] * cdata.size[1],
+               1, cdata.size[0],
+               dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
+               cdata.size[0], cdata.size[1], commSpace);
+         }
+      } else {
+         for (Index_t fi = 0; fi < xferFields; ++fi) {
+            Kokkos::View<Real_t*>& dest = fieldData[fi];
+            Copy1D(domain.commDataRecvView,
+               offset + fi * cdata.size[0],
+               1,
+               dest, cdata.offset, cdata.dst_stride[0],
+               cdata.size[0], commSpace);
+         }
       }
-   } else {
-      for (Index_t fi=0 ; fi<xferFields; ++fi) {
-         Kokkos::View<Real_t*> &dest = fieldData[fi] ;
-         Copy1D(domain.commDataRecvView, 
-            offset + fi * cdata.size[0],
-            1,
-            dest, cdata.offset, cdata.dst_stride[0],
-            cdata.size[0], commSpace
-            );
-         // Copy1D(dest, cdata.offset, cdata.dst_stride[0],
-         //       domain.commDataRecvView, 
-         //       offset + fi * cdata.size[0],
-         //       1,
-         //       cdata.size[0], commSpace
-         //       );
-      }
+      commSpace.fence();  // ensure each batch completes before the next overwrites
    }
-   commSpace.fence();
+
+   posVelRecvBuffer.clear();
 }
 
 /******************************************/
 
 void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   commSpace.fence();
+   // commSpace.fence();
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
@@ -826,7 +845,7 @@ void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFiel
 
 void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   commSpace.fence();
+   // commSpace.fence();
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
@@ -868,7 +887,7 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
 
 void DomainChare::processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   commSpace.fence();
+   // commSpace.fence();
 
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;

@@ -39,6 +39,47 @@ Type* AllocateFromBuffer(const Index_t& count) {
   return static_cast<Type*>(ptr);
 }
 
+void PrintState(Domain& locDom, int myRank) {
+  Kokkos::fence();
+  int N = locDom.numNode();
+  int E = locDom.numElem();
+  int show = (N < 5) ? N : 4;
+  int eshow = (E < 5) ? E : 4;
+  auto hx  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_x);
+  auto hy  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_y);
+  auto hz  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_z);
+  auto hxd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_xd);
+  auto hyd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_yd);
+  auto hzd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_zd);
+  auto he  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_e);
+  auto hp  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_p);
+  auto hq  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_q);
+  auto hv  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_v);
+  auto hvn = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_vnew);
+  auto hfx = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_fx);
+  auto hfy = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_fy);
+  auto hfz = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_fz);
+  printf("[charm rank=%d cycle=%d] dt=%.10e time=%.10e\n", myRank, locDom.cycle(), 
+         double(locDom.deltatime()), double(locDom.time()));
+printf("  x : "); for(int i=0;i<show/2;i++) printf("%.10e ",hx(i)); printf("..."); for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hx(i)); printf("\n");
+      printf("  y : "); for(int i=0;i<show;i++) printf("%.10e ",hy(i));printf("..."); for(int i=N-1-show/2;i<=N-1;i++)printf("%.10e ",hy(i));printf("\n");
+      printf("  z : "); for(int i=0;i<show;i++) printf("%.10e ",hz(i));printf("..."); for(int i=N-1-show/2;i<=N-1;i++)printf("%.10e ",hz(i));printf("\n");
+      printf("  xd: "); for(int i=0;i<show;i++) printf("%.10e ",hxd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hxd(i));printf("\n");
+      printf("  yd: "); for(int i=0;i<show;i++) printf("%.10e ",hyd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hyd(i));printf("\n");
+      printf("  zd: "); for(int i=0;i<show;i++) printf("%.10e ",hzd(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hzd(i));printf("\n");
+      printf("  e : "); for(int i=0;i<eshow;i++) printf("%.10e ",he(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",he(i));printf("\n");
+      printf("  p : "); for(int i=0;i<eshow;i++) printf("%.10e ",hp(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hp(i));printf("\n");
+      printf("  q : "); for(int i=0;i<eshow;i++) printf("%.10e ",hq(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hq(i));printf("\n");
+      printf("  v : "); for(int i=0;i<eshow;i++) printf("%.10e ",hv(i));printf("...");for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e ",hv(i));printf("\n");
+      // printf("  vn: "); for(int i=0;i<eshow;i++) printf("%.10e ",hvn(i));for(int i=E-1-eshow/2;i<=E-1;i++) printf("%.10e\n",hvn(i));
+      printf("  fx: "); for(int i=0;i<show;i++) printf("%.10e ",hfx(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfx(i));printf("\n");
+      printf("  fy: "); for(int i=0;i<show;i++) printf("%.10e ",hfy(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfy(i));printf("\n");
+      printf("  fz: "); for(int i=0;i<show;i++) printf("%.10e ",hfz(i));printf("...");for(int i=N-1-show/2;i<=N-1;i++) printf("%.10e ",hfz(i));printf("\n");
+      Real_t minvn = hv(0); 
+  for(int i=1;i<E;i++) if(hvn(i)<minvn) minvn=hvn(i);
+  printf("  min_vnew=%.10e\n", double(minvn));
+}
+
 Real_t DomainChare::TimeStepCalculateLocal(Domain &domain) {
   if ((domain.dtfixed() <= Real_t(0.0)) && (domain.cycle() != Int_t(0))) {
     Real_t ratio;
@@ -335,7 +376,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   Kokkos::View<Real_t*, Kokkos::MemoryTraits<Kokkos::Unmanaged>> fy_elem(fy_elem_ptr, numElem8);
   Kokkos::View<Real_t*, Kokkos::MemoryTraits<Kokkos::Unmanaged>> fz_elem(fz_elem_ptr, numElem8);
 
-  Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
+  Kokkos::parallel_for("IntegrateStressForElems B", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int k) {
     const Index_t *const elemToNode = &domain.nodelist(k,0);
     Real_t B[3][8];
@@ -358,9 +399,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   int team_size = 1;
   if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
-  execSpace.fence(); // Required: Phase A writes fx_elem, Phase B reads it
-  // IntegrateStressForElems B
-  Kokkos::parallel_for (Kokkos::Experimental::require(Kokkos::TeamPolicy<>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+  Kokkos::parallel_for ("IntegrateStressForElems B", Kokkos::Experimental::require(Kokkos::TeamPolicy<>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
      {
        const Index_t gnode_begin = team.league_rank()*128;
@@ -751,8 +790,8 @@ static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
     }
   },error);
 
-  //if(error)
-  //  CkAbort("VolumeError1");
+  if(error)
+   CkAbort("VolumeError1");
 
   if (hgcoef > Real_t(0.)) {
     CalcFBHourglassForceForElems(domain, determ, v_x8n, v_y8n, v_z8n, v_dvdx, v_dvdy,
@@ -1066,6 +1105,12 @@ CalcElemVelocityGradient(const Real_t *const xvel, const Real_t *const yvel,
 
 void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, ExecSpace execSpace) {
 
+  Kokkos::View<Real_t*> volume_s("volume", numElem);
+  Kokkos::View<Real_t**> x_local_s("x", numElem, 8);
+  Kokkos::View<Real_t**> y_local_s("y", numElem, 8);
+  Kokkos::View<Real_t**> z_local_s("z", numElem, 8);
+  Kokkos::fence();
+
   Kokkos::parallel_for("CalcKinematicsForElems", RangePolicy(execSpace, 0, numElem),
                        KOKKOS_LAMBDA(const int k) {
     Real_t B[3][8];
@@ -1085,7 +1130,15 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     CollectDomainNodesToElemNodes(domain, elemToNode, x_local, y_local,
                                   z_local);
 
+    for(int i=0;i<8;i++)
+    {
+      x_local_s(k, i) = x_local[i];
+      y_local_s(k, i) = y_local[i];
+      z_local_s(k, i) = z_local[i];
+    }
+
     volume = CalcElemVolume(x_local, y_local, z_local);
+    volume_s(k) = volume; 
     relativeVolume = volume / domain.volo(k);
     domain.vnew(k) = relativeVolume;
     domain.delv(k) = relativeVolume - domain.v(k);
@@ -1115,6 +1168,33 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     domain.dyy(k) = D[1];
     domain.dzz(k) = D[2];
   });
+
+  if(domain.flatIndex==0)
+   printf("numelem %d\n", numElem);
+  auto h_volume_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), volume_s);
+  auto h_x_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), x_local_s);
+  auto h_y_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), y_local_s);
+  auto h_z_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), z_local_s);
+  
+  if(domain.flatIndex==0)
+  {
+    for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+    {
+      printf("%.10e ", h_volume_s(i));
+    }
+    printf("\n");
+  }
+
+  if(domain.flatIndex==0)
+  {
+    for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+    {
+      for(int j = 0;j<8;j++)
+        printf("(%.10e, %.10e, %.10e)", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
+      printf("\n");
+    }
+  }
+
 }
 
 static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
@@ -2035,8 +2115,8 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
   opts.do_atomic = do_atomic_;
 
   //TODO: change
-  hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, -1));
-  //hapiCheck(cudaStreamCreateWithPriority(&computeStream, cudaStreamNonBlocking, 0));
+  // hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, -1));
+  hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamNonBlocking, 0));
   computeStream = commStream;
 
   // Use default execution space for both to simplify
@@ -2046,7 +2126,7 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
   Int_t col, row, plane, side;
   flatIndex = thisIndex.x + thisIndex.y * numChares_ + thisIndex.z * numChares_ * numChares_;
   InitMeshDecomp(numRanks, flatIndex, &col, &row, &plane, &side);
-  locDom = new Domain(numRanks, col, row, plane, nx_, side, nr_, balance_, cost_);
+  locDom = new Domain(numRanks, col, row, plane, nx_, side, nr_, balance_, cost_, flatIndex);
 
   thisProxy[thisIndex].init(numRanks, nx_, nr_, balance_, cost_, numChares_);
 }
