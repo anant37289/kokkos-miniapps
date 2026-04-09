@@ -41,8 +41,8 @@ void PrintState(Domain& locDom, int myRank) {
   Kokkos::fence();
   int N = locDom.numNode();
   int E = locDom.numElem();
-  int show = (N < 10) ? N : 5;
-  int eshow = (E < 10) ? E : 5;
+  int show = (N < 100) ? N : 50;
+  int eshow = (E < 100) ? E : 50;
   
   auto hx  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_x);
   auto hy  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_y);
@@ -374,6 +374,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
                                            Real_t *determ, Index_t numElem,
                                            Index_t numNode, ExecSpace execSpace) {
   Index_t numElem8 = numElem * 8;
+  domain.ResizeBuffer((numElem8*sizeof(Real_t)+4096)*3);
   Real_t *fx_elem_ptr = domain.AllocateFromBuffer<Real_t>(numElem8);
   Real_t *fy_elem_ptr = domain.AllocateFromBuffer<Real_t>(numElem8);
   Real_t *fz_elem_ptr = domain.AllocateFromBuffer<Real_t>(numElem8);
@@ -758,6 +759,8 @@ static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
   Index_t numElem = domain.numElem();
   Index_t numElem8 = numElem * 8;
 
+  domain.ResizeBuffer((numElem8*sizeof(Real_t)+4096)*(do_atomic?6:9));
+
   Real_t *dvdx = domain.AllocateFromBuffer<Real_t>(numElem8);
   Real_t *dvdy = domain.AllocateFromBuffer<Real_t>(numElem8);
   Real_t *dvdz = domain.AllocateFromBuffer<Real_t>(numElem8);
@@ -813,16 +816,17 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
     Index_t numElem8 = numElem * 8;
 
     // Single ResizeBuffer for the entire call chain:
-    //  - 4 x numElem for sigxx/sigyy/sigzz/determ (persistent across sub-calls)
-    //  - max scratch is CalcHourglassControlForElems: (do_atomic?6:9) x numElem8
-    domain.ResizeBuffer((numElem * sizeof(Real_t) + 4096) * 4 +
-                 (numElem8 * sizeof(Real_t) + 4096) * (do_atomic ? 6 : 9));
+    //  - sigxx/sigyy/sigzz/determ are now class views (not from buffer)
+    //  - scratch (cumulative, no reclaim): 3 (IntegrateStress) + 6 (CalcHourglass) + 3 (CalcFBHourglass if !atomic)
+    // domain.ResizeBuffer((numElem8 * sizeof(Real_t) + 4096) * (do_atomic ? 9 : 12));
 
-    Real_t *sigxx  = domain.AllocateFromBuffer<Real_t>(numElem);
-    Real_t *sigyy  = domain.AllocateFromBuffer<Real_t>(numElem);
-    Real_t *sigzz  = domain.AllocateFromBuffer<Real_t>(numElem);
-    Real_t *determ = domain.AllocateFromBuffer<Real_t>(numElem);
-    size_t scratch_start = domain.buffer_offset;
+    domain.AllocateCalcVolumeForceBuffer(numElem);
+
+    Real_t *sigxx  = domain.sigxx.data();
+    Real_t *sigyy  = domain.sigyy.data();
+    Real_t *sigzz  = domain.sigzz.data();
+    Real_t *determ = domain.determ.data();
+    // size_t scratch_start = domain.buffer_offset;
 
     InitStressTermsForElems(domain, sigxx, sigyy, sigzz, numElem, execSpace);
 
@@ -830,7 +834,7 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
                             domain.numNode(), execSpace);
 
     // Reclaim IntegrateStressForElems scratch; sigxx/sigyy/sigzz/determ stay valid
-    domain.buffer_offset = scratch_start;
+    // domain.buffer_offset = scratch_start;
 
     CalcHourglassControlForElems(domain, determ, hgcoef, execSpace);
   }

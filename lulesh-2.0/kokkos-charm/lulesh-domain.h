@@ -299,6 +299,17 @@ public:
     }
   }
 
+  void AllocateCalcVolumeForceBuffer(Int_t numElem)
+  {
+      if(sigxx.size()!=numElem)
+      {
+        Kokkos::resize(sigxx, numElem);
+        Kokkos::resize(sigyy, numElem);
+        Kokkos::resize(sigzz, numElem);
+        Kokkos::resize(determ, numElem);
+      }
+  }
+
   //
   // ACCESSORS
   //
@@ -627,6 +638,11 @@ public:
   Kokkos::View<Real_t*> m_xdd; /* accelerations */
   Kokkos::View<Real_t*> m_ydd;
   Kokkos::View<Real_t*> m_zdd;
+
+  Kokkos::View<Real_t*> sigxx;
+  Kokkos::View<Real_t*> sigyy;
+  Kokkos::View<Real_t*> sigzz;
+  Kokkos::View<Real_t*> determ;
 
   Kokkos::View<Real_t*> m_fx; /* forces */
   Kokkos::View<Real_t*> m_fy;
