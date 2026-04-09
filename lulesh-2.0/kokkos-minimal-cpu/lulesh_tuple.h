@@ -133,7 +133,7 @@ class Domain {
    // Constructor
    Domain(Int_t numRanks, Index_t colLoc,
           Index_t rowLoc, Index_t planeLoc,
-          Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost);
+          Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost, Int_t my_rank);
 
    //
    // ALLOCATION

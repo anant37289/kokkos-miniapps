@@ -178,7 +178,7 @@ mainmodule lulesh {
             }
 
             serial "AfterForceRecv" {
-                applyBufferedForce();
+                //applyBufferedForce();
             }
 
             serial "LagrangeNodal" {
@@ -235,7 +235,7 @@ mainmodule lulesh {
             }
 
             serial "AfterPosVelRecv" {
-                applyBufferedPosVel();
+                //applyBufferedPosVel();
                 // Kokkos::fence();
             }
 

@@ -15,7 +15,7 @@
 /////////////////////////////////////////////////////////////////////
 Domain::Domain(Int_t numRanks, Index_t colLoc,
                Index_t rowLoc, Index_t planeLoc,
-               Index_t nx, int tp, int nr, int balance, Int_t cost)
+               Index_t nx, int tp, int nr, int balance, Int_t cost, Int_t my_rank)
    :
    m_e_cut(Real_t(1.0e-7)),
    m_p_cut(Real_t(1.0e-7)),
@@ -166,6 +166,18 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
          nodalMass(idx) += volume / Real_t(8.0) ;
       }
    }
+  myRank = my_rank;
+  if(my_rank==0)
+   {
+     for(int i=0;i < std::min(m_volo.size(), (size_t)3);i++)
+       printf("%.10e ", volo(i));
+
+    printf(" ... ");
+
+    for(int i=m_volo.size() - 3;i<m_volo.size();i++)
+      printf("%.10e ", volo(i));
+   }
+
 
    // deposit initial energy
    // An energy of 3.948746e+7 is correct for a problem with

@@ -130,7 +130,7 @@ class Domain {
 public:
   // Constructor
   Domain(Int_t numRanks, Index_t colLoc, Index_t rowLoc, Index_t planeLoc,
-         Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost);
+         Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost, Int_t my_rank);
 
   // Destructor
   ~Domain();
@@ -502,7 +502,7 @@ private:
   Kokkos::vector<Real_t> m_xdd; /* accelerations */
   Kokkos::vector<Real_t> m_ydd;
   Kokkos::vector<Real_t> m_zdd;
-
+  public:
   Kokkos::vector<Real_t> m_fx; /* forces */
   Kokkos::vector<Real_t> m_fy;
   Kokkos::vector<Real_t> m_fz;
@@ -625,6 +625,8 @@ private:
   Index_t m_rowMin, m_rowMax;
   Index_t m_colMin, m_colMax;
   Index_t m_planeMin, m_planeMax;
+public:
+  Int_t myRank;
 };
 
 typedef Real_t &(Domain::*Domain_member)(Index_t) const;
