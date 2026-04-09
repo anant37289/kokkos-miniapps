@@ -758,72 +758,9 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
 /******************************************/
 
 void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
-   // Buffer the sender coords; actual unpacking is deferred to applyBufferedPosVel()
-   // to ensure deterministic face→edge→corner ordering (matching MPI).
-   posVelRecvBuffer.push_back({x, y, z});
-
-#if DEBUG_COMM
-   // Diagnostic: check recv data immediately at DMA completion for z-face neighbors
-   int ox = x - thisIndex.x;
-   int oy = y - thisIndex.y;
-   int oz = z - thisIndex.z;
-   if (oz != 0 && ox == 0 && oy == 0) {
-      // z-face: check if data at offset 0 in recvView is correct
-      commSpace.fence();
-      auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataRecvViewPosVel);
-      CommData& cd = commDataRecvPosVel[{x, y, z}];
-      int maxPlaneComm = xferFields * locDom->maxPlaneSize();
-      int maxEdgeComm = xferFields * locDom->maxEdgeSize();
-      int off = cd.pmsg * maxPlaneComm + cd.emsg * maxEdgeComm + cd.cmsg * CACHE_COHERENCE_PAD_REAL;
-      int count = cd.size[0] * cd.size[1];
-      int nzero = 0;
-      for (int k = 0; k < count; ++k) {
-         if (h_recv(off + k) == 0.0 || h_recv(off + k) == -0.0) nzero++;
-      }
-      if (nzero > count * 9 / 10) {
-         printf("[DMA-LAND ZERO chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
-            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
-         for (int fi = 0; fi < 6 && fi < xferFields; ++fi) {
-            printf("  fi=%d last5:", fi);
-            int base = off + fi * count;
-            for (int k = count - 5; k < count; ++k) {
-               if (k >= 0) printf(" [%d]=%.10e", base + k, h_recv(base + k));
-            }
-            printf("\n");
-         }
-      } else {
-         printf("[DMA-LAND OK chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
-            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
-      }
-   }
-   #endif
-}
-
-// Helper: compute neighbor type priority from offset.
-// face (1 non-zero) = 0, edge (2 non-zero) = 1, corner (3 non-zero) = 2.
-static int neighborPriority(int ox, int oy, int oz) {
-   return (ox != 0) + (oy != 0) + (oz != 0) - 1;
-}
-
-void DomainChare::applyBufferedPosVel() {
    Domain& domain = *locDom;
-   int xferFields = 6;
    Index_t maxPlaneComm = xferFields * domain.maxPlaneSize();
    Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize();
-
-   // Sort by neighbor type: faces (priority 0) first, edges (1), corners (2) last.
-   // This matches the MPI unpack order where edges overwrite faces and corners
-   // overwrite edges for overlapping nodes.
-   std::sort(posVelRecvBuffer.begin(), posVelRecvBuffer.end(),
-      [this](const std::tuple<int,int,int>& a, const std::tuple<int,int,int>& b) {
-         int pa = neighborPriority(std::get<0>(a) - thisIndex.x,
-                                   std::get<1>(a) - thisIndex.y,
-                                   std::get<2>(a) - thisIndex.z);
-         int pb = neighborPriority(std::get<0>(b) - thisIndex.x,
-                                   std::get<1>(b) - thisIndex.y,
-                                   std::get<2>(b) - thisIndex.z);
-         return pa < pb;
-      });
 
    Kokkos::View<Real_t*> fieldData[6];
    fieldData[0] = domain.m_x;
@@ -833,180 +770,73 @@ void DomainChare::applyBufferedPosVel() {
    fieldData[4] = domain.m_yd;
    fieldData[5] = domain.m_zd;
 
+   int sx = x;
+   int sy = y;
+   int sz = z;
+
+   CommData& cdata = commDataRecvPosVel[{x, y, z}];
+   Index_t offsetX = x - thisIndex.x;
+   Index_t offsetY = y - thisIndex.y;
+   Index_t offsetZ = z - thisIndex.z;
+
+   int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
+
+   if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
+         offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
+      for (Index_t fi = 0; fi < xferFields; ++fi) {
+         Kokkos::View<Real_t*>& dest = fieldData[fi];
+         Copy2D(domain.commDataRecvViewPosVel,
+            offset + fi * cdata.size[0] * cdata.size[1],
+            1, cdata.size[0],
+            dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
+            cdata.size[0], cdata.size[1], commSpace);
+         }
+   } else {
+      for (Index_t fi = 0; fi < xferFields; ++fi) {
+         Kokkos::View<Real_t*>& dest = fieldData[fi];
+         Copy1D(domain.commDataRecvViewPosVel,
+            offset + fi * cdata.size[0],
+            1,
+            dest, cdata.offset, cdata.dst_stride[0],
+            cdata.size[0], commSpace);
+      }
+   }
    #if DEBUG_COMM
-   // Zero-check on face recv data for ALL chares
-   {
-      commSpace.fence(); // ensure all DMAs on commStream are visible before host read
-      auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.commDataRecvViewPosVel);
-      for (auto& sender : posVelRecvBuffer) {
-         int sx = std::get<0>(sender);
-         int sy = std::get<1>(sender);
-         int sz = std::get<2>(sender);
-         Index_t ox = sx - thisIndex.x;
-         Index_t oy = sy - thisIndex.y;
-         Index_t oz = sz - thisIndex.z;
-         // only check face neighbours (exactly one non-zero offset)
-         int nnonzero = (ox != 0) + (oy != 0) + (oz != 0);
-         if (nnonzero == 1) {
-            CommData& cd = commDataRecvPosVel[{sx, sy, sz}];
-            int off = cd.pmsg * maxPlaneComm + cd.emsg * maxEdgeComm + cd.cmsg * CACHE_COHERENCE_PAD_REAL;
-            int count = cd.size[0] * cd.size[1];
-            // scan x field (fi=0) for zeros
-            int nzero = 0;
-            for (int k = 0; k < count; ++k) {
-               if (h_recv(off + k) == 0.0 || h_recv(off + k) == -0.0) nzero++;
-            }
-            // Only trigger on suspicious zero counts (> 90% zeros = likely corruption, not boundary)
-            if (nzero > count * 9 / 10) {
-               printf("[RECV ZERO chare(%d,%d,%d) from(%d,%d,%d)] x-field has %d zeros out of %d (off=%d)\n",
-                  thisIndex.x, thisIndex.y, thisIndex.z, sx, sy, sz, nzero, count, off);
-               for (int fi = 0; fi < 6; ++fi) {
-                  printf("  fi=%d last5:", fi);
-                  int base = off + fi * count;
-                  for (int k = count - 5; k < count; ++k) {
-                     if (k >= 0) printf("[%d] %.10e",(base + k), h_recv(base + k));
-                  }
-                  printf("\n");
-               }
-            }
-         }
-      }
-   }
-
-   //sender dump
-   if(flatIndex==0)
-   {
-      auto h_nodelist = Kokkos::create_mirror_view(domain.m_nodelist);
-      Kokkos::deep_copy(h_nodelist, domain.m_nodelist);
-      auto h_commDataRecvView = Kokkos::create_mirror_view(domain.commDataRecvViewPosVel);
-      Kokkos::deep_copy(h_commDataRecvView, domain.commDataRecvViewPosVel );
-
-      // std::set<int> last_element_nodes{};
-      // for(int i=0;i<8;i++)
-      //    last_element_nodes.insert(h_nodelist(domain.numElem()-1, i));
-
-      std::map<int,int> idxToNodeNum{};
-      for(int i=0;i<8;i++)
-         idxToNodeNum[h_nodelist(domain.numElem()-1, i)] = i;
-
-      for(auto& sender : posVelRecvBuffer) {
-         int x = std::get<0>(sender);
-         int y = std::get<1>(sender);
-         int z = std::get<2>(sender);
-   
-         CommData& cdata = commDataRecvPosVel[{x, y, z}];
-         
-         Index_t offsetX = x - thisIndex.x;
-         Index_t offsetY = y - thisIndex.y;
-         Index_t offsetZ = z - thisIndex.z;
-
-         int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
-
-         
-         if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
-         offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0))
-         {
-               printf("neighbour [%d, %d, %d] size dump\n", x, y, z);
-               printf("cdata.size[0] %d, cdata.size[1] %d\n",cdata.size[0], cdata.size[1]);
-               printf("cdata.dst_stride[0] %d, cdata.dst_stride[1] %d\n", cdata.dst_stride[0], cdata.dst_stride[1]);
-               // bool will_write = false;
-               // size_t count_writes = 0;
-               for(int i=0;i<cdata.size[0];i++)
-               {
-                  for(int j=0;j<cdata.size[1];j++)
-                  {
-                     //will write to 
-                     auto idx = cdata.offset + j * cdata.dst_stride[1] + i * cdata.dst_stride[0];
-                     if(idxToNodeNum.find(idx)!=idxToNodeNum.end())
-                     {
-                        // will_write = true;
-                        // count_writes++;
-                        printf("writed to idx %d [%d] with value ", idx, idxToNodeNum[idx]);
-                        for(int fi=0;fi<3;fi++)
-                           printf("%.10e ", h_commDataRecvView(offset + fi * cdata.size[0] * cdata.size[1] + j * cdata.size[0] + i));
-                        printf("\n");
-                     }
-                  }
-               }
-      
-               // if(will_write)
-               // {
-               //    printf("[warning] will write to last x,y,z values %d number of times\n", count_writes);
-               //    printf("---\n");
-               // }
-         }
-         else 
-         {
-            printf("neighbour [%d, %d, %d] size dump\n", x, y, z);
-            printf("cdata.size[0] %d\n",cdata.size[0]);
-            printf("cdata.dst_stride[0] %d\n", cdata.dst_stride[0]);
-            if(flatIndex==0)
-            {
-               bool will_write = false;
-               size_t count_writes = 0;
-               for(int i=0;i<cdata.size[0];i++)
-               {
-                  auto idx = cdata.offset + i * cdata.dst_stride[0];
-                  if(idxToNodeNum.find(idx)!=idxToNodeNum.end())
-                  {
-                     // will_write = true;
-                     // count_writes++;
-                     printf("writed to idx %d [%d] with value ", idx, idxToNodeNum[idx]);
-                     for(int fi=0;fi<3;fi++)
-                        printf("%.10e ", h_commDataRecvView(offset + fi * cdata.size[0] + i));
-                     printf("\n");
-                  }
-               }
-               // if(will_write)
-               // {
-               //    printf("[warning] will write to last three x,y,z values %d number of times\n", count_writes);
-               //    printf("---\n");
-               // }
-            }
-         }
-      }
-   }
+   // Diagnostic: check recv data immediately at DMA completion for z-face neighbors
+   // int ox = x - thisIndex.x;
+   // int oy = y - thisIndex.y;
+   // int oz = z - thisIndex.z;
+   // if (oz != 0 && ox == 0 && oy == 0) {
+   //    // z-face: check if data at offset 0 in recvView is correct
+   //    commSpace.fence();
+   //    auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataRecvViewPosVel);
+   //    CommData& cd = commDataRecvPosVel[{x, y, z}];
+   //    int maxPlaneComm = xferFields * locDom->maxPlaneSize();
+   //    int maxEdgeComm = xferFields * locDom->maxEdgeSize();
+   //    int off = cd.pmsg * maxPlaneComm + cd.emsg * maxEdgeComm + cd.cmsg * CACHE_COHERENCE_PAD_REAL;
+   //    int count = cd.size[0] * cd.size[1];
+   //    int nzero = 0;
+   //    for (int k = 0; k < count; ++k) {
+   //       if (h_recv(off + k) == 0.0 || h_recv(off + k) == -0.0) nzero++;
+   //    }
+   //    if (nzero > count * 9 / 10) {
+   //       printf("[DMA-LAND ZERO chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
+   //          thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
+   //       for (int fi = 0; fi < 6 && fi < xferFields; ++fi) {
+   //          printf("  fi=%d last5:", fi);
+   //          int base = off + fi * count;
+   //          for (int k = count - 5; k < count; ++k) {
+   //             if (k >= 0) printf(" [%d]=%.10e", base + k, h_recv(base + k));
+   //          }
+   //          printf("\n");
+   //       }
+   //    } else {
+   //       printf("[DMA-LAND OK chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
+   //          thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
+   //    }
+   // }
    #endif
-
-
-   for (auto& sender : posVelRecvBuffer) {
-      int x = std::get<0>(sender);
-      int y = std::get<1>(sender);
-      int z = std::get<2>(sender);
-
-      CommData& cdata = commDataRecvPosVel[{x, y, z}];
-      Index_t offsetX = x - thisIndex.x;
-      Index_t offsetY = y - thisIndex.y;
-      Index_t offsetZ = z - thisIndex.z;
-
-      int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
-
-      if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
-            offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
-         for (Index_t fi = 0; fi < xferFields; ++fi) {
-            Kokkos::View<Real_t*>& dest = fieldData[fi];
-            Copy2D(domain.commDataRecvViewPosVel,
-               offset + fi * cdata.size[0] * cdata.size[1],
-               1, cdata.size[0],
-               dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-               cdata.size[0], cdata.size[1], commSpace);
-            }
-      } else {
-         for (Index_t fi = 0; fi < xferFields; ++fi) {
-            Kokkos::View<Real_t*>& dest = fieldData[fi];
-            Copy1D(domain.commDataRecvViewPosVel,
-               offset + fi * cdata.size[0],
-               1,
-               dest, cdata.offset, cdata.dst_stride[0],
-               cdata.size[0], commSpace);
-         }
-      }
-      // commSpace.fence();
-   }
-
-   posVelRecvBuffer.clear();
 }
-
 /******************************************/
 
 void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
@@ -1100,66 +930,49 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
 /******************************************/
 
 void DomainChare::processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
-   // Buffer sender coords; actual Add is deferred to applyBufferedForce()
-   // so that contributions are accumulated in face→edge→corner order,
-   // matching MPI's deterministic FP accumulation sequence.
-   forceRecvBuffer.push_back({x, y, z});
-}
+      Domain& domain = *locDom;
 
-void DomainChare::applyBufferedForce() {
-   // Global fence ensures all GPU work (including intra-PE DMA copies on other
-   // streams via +gpushm) has completed before we read commDataRecvView.
-   Kokkos::fence();
+   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
+   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
 
-   Domain& domain = *locDom;
-   const int xferFields = 3;
-   const Index_t maxPlaneComm = xferFields * domain.maxPlaneSize();
-   const Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize();
-
-   // Sort face (1 non-zero offset) → edge (2) → corner (3), matching MPI order.
-   std::sort(forceRecvBuffer.begin(), forceRecvBuffer.end(),
-      [this](const std::tuple<int,int,int>& a, const std::tuple<int,int,int>& b) {
-         int na = (std::get<0>(a) != thisIndex.x) + (std::get<1>(a) != thisIndex.y) + (std::get<2>(a) != thisIndex.z);
-         int nb = (std::get<0>(b) != thisIndex.x) + (std::get<1>(b) != thisIndex.y) + (std::get<2>(b) != thisIndex.z);
-         return na < nb;
-      });
+   CommData cdata = commDataRecvSBN[{x, y, z}];
+   Index_t offsetX = x - thisIndex.x;
+   Index_t offsetY = y - thisIndex.y;
+   Index_t offsetZ = z - thisIndex.z;
 
    Kokkos::View<Real_t*> fieldData[3];
    fieldData[0] = domain.m_fx;
    fieldData[1] = domain.m_fy;
    fieldData[2] = domain.m_fz;
 
-   for (auto& sender : forceRecvBuffer) {
-      const int x = std::get<0>(sender);
-      const int y = std::get<1>(sender);
-      const int z = std::get<2>(sender);
+   int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
 
-      CommData cdata = commDataRecvSBN[{x, y, z}];
-      const Index_t offsetX = x - thisIndex.x;
-      const Index_t offsetY = y - thisIndex.y;
-      const Index_t offsetZ = z - thisIndex.z;
-
-      const int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm
-                       + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
-
-      if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
-            offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
-         for (Index_t fi = 0; fi < xferFields; ++fi) {
-            Add2D(domain.commDataRecvViewSBN, offset + fi * cdata.size[0] * cdata.size[1],
-                  1, cdata.size[0],
-                  fieldData[fi], cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-                  cdata.size[0], cdata.size[1], commSpace);
-         }
-      } else {
-         for (Index_t fi = 0; fi < xferFields; ++fi) {
-            Add1D(domain.commDataRecvViewSBN, offset + fi * cdata.size[0],
-                  1,
-                  fieldData[fi], cdata.offset, cdata.dst_stride[0],
-                  cdata.size[0], commSpace);
-         }
+   if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
+         offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
+      for (Index_t fi=0 ; fi<xferFields; ++fi) {
+         Kokkos::View<Real_t*> &dest = fieldData[fi] ;
+         Add2D(domain.commDataRecvView, offset + fi * cdata.size[0] * cdata.size[1],
+               1, cdata.size[0],
+               dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
+               cdata.size[0], cdata.size[1], commSpace);
+         // Add2D(dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
+         //       domain.commDataRecvView, 
+         //       offset + fi * cdata.size[0] * cdata.size[1],
+         //       cdata.src_stride[0], cdata.src_stride[1],
+         //       cdata.size[0], cdata.size[1], commSpace);
+      }
+   } else {
+      for (Index_t fi=0 ; fi<xferFields; ++fi) {
+         Kokkos::View<Real_t*> &dest = fieldData[fi] ;
+         Add1D(domain.commDataRecvView, offset + fi * cdata.size[0],
+               1,
+               dest, cdata.offset, cdata.dst_stride[0],
+               cdata.size[0], commSpace);
+         // Add1D(dest, cdata.offset, cdata.dst_stride[0],
+         //       domain.commDataRecvView, 
+         //       offset + fi * cdata.size[0],
+         //       cdata.src_stride[0],
+         //       cdata.size[0], commSpace);
       }
    }
-
-   commSpace.fence();
-   forceRecvBuffer.clear();
 }

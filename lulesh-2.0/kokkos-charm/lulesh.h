@@ -110,8 +110,6 @@ public:
 
   void processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf);
 
-  void applyBufferedPosVel();
-  void applyBufferedForce();
 
   Domain *locDom;
   uint32_t iter;

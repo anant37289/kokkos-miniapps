@@ -715,7 +715,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   NVTXTracer(os.str(), NVTXColor::GreenSea);
   os.clear();
   if(!do_atomic) {
-    execSpace.fence(); // Required: Phase A writes fx_elem, Phase B reads it
+    // execSpace.fence(); // Required: Phase A writes fx_elem, Phase B reads it
     os << "CalcFBHourglassForceForElems B ";
     NVTXTracer(os.str(), NVTXColor::Turquoise);
     os.clear();
@@ -1111,11 +1111,13 @@ CalcElemVelocityGradient(const Real_t *const xvel, const Real_t *const yvel,
 
 void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, ExecSpace execSpace) {
 
+  #if DEBUG_COMM
   Kokkos::View<Real_t*> volume_s("volume", numElem);
   Kokkos::View<Real_t**> x_local_s("x", numElem, 8);
   Kokkos::View<Real_t**> y_local_s("y", numElem, 8);
   Kokkos::View<Real_t**> z_local_s("z", numElem, 8);
   Kokkos::fence();
+  #endif
 
   Kokkos::parallel_for("CalcKinematicsForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int k) {
@@ -1136,15 +1138,19 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     CollectDomainNodesToElemNodes(domain, elemToNode, x_local, y_local,
                                   z_local);
 
+    #if DEBUG_COMM
     for(int i=0;i<8;i++)
     {
       x_local_s(k, i) = x_local[i];
       y_local_s(k, i) = y_local[i];
       z_local_s(k, i) = z_local[i];
     }
+    #endif
 
     volume = CalcElemVolume(x_local, y_local, z_local);
+    #if DEBUG_COMM
     volume_s(k) = volume; 
+    #endif
     relativeVolume = volume / domain.volo(k);
     domain.vnew(k) = relativeVolume;
     domain.delv(k) = relativeVolume - domain.v(k);
@@ -1175,6 +1181,7 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     domain.dzz(k) = D[2];
   });
 
+  #if DEBUG_COMM
   if(domain.flatIndex==0)
    printf("numelem %d\n", numElem);
   auto h_volume_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), volume_s);
@@ -1203,6 +1210,7 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
 
   fflush(stderr);
   fflush(stdout);
+  #endif
 
 }
 
