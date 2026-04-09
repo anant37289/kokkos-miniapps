@@ -38,8 +38,8 @@ void PrintState(Domain& locDom, int myRank) {
   Kokkos::fence();
   int N = locDom.numNode();
   int E = locDom.numElem();
-  int show = (N < 10) ? N : 5;
-  int eshow = (E < 10) ? E : 5;
+  int show = (N < 100) ? N : 50;
+  int eshow = (E < 100) ? E : 50;
   
   auto hx  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_x);
   auto hy  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_y);
@@ -786,10 +786,12 @@ static inline void CalcVolumeForceForElems(Domain &domain) {
   Index_t numElem = domain.numElem();
   if (numElem != 0) {
     Real_t hgcoef = domain.hgcoef();
-    Kokkos::View<Real_t*> sigxx("sigxx", numElem);
-    Kokkos::View<Real_t*> sigyy("sigyy", numElem);
-    Kokkos::View<Real_t*> sigzz("sigzz", numElem);
-    Kokkos::View<Real_t*> determ("determ", numElem);
+    domain.AllocateCalcVolumeForceBuffer(numElem);
+
+    auto sigxx = domain.sigxx;
+    auto sigyy = domain.sigyy;
+    auto sigzz = domain.sigzz;
+    auto determ = domain.determ;
 
     InitStressTermsForElems(domain, sigxx.data(), sigyy.data(), sigzz.data(), numElem);
 
@@ -1232,7 +1234,7 @@ static inline void CalcLagrangeElements(Domain &domain) {
       exit(VolumeError);
       #endif
 
-    domain.DeallocateStrains();
+    // domain.DeallocateStrains();
   }
 }
 
@@ -1620,7 +1622,7 @@ static inline void CalcQForElems(Domain &domain) {
 
     CalcMonotonicQForElems(domain);
 
-    domain.DeallocateGradients();
+    // domain.DeallocateGradients();
 
     Index_t idx = 0;
     Kokkos::parallel_reduce(numElem, KOKKOS_LAMBDA (const Index_t& i, Index_t& count) {

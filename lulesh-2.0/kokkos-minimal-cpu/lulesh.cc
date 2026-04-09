@@ -2397,10 +2397,10 @@ int main(int argc, char *argv[]) {
       Kokkos::fence();
       int N = locDom->numNode();
       int E = locDom->numElem();
-      int show = (N < 10) ? N : 5;
-      int eshow = (E < 10) ? E : 5;
-      printf("N, %d; E, %d\n", N,E);
-      printf("show %d\n", show);
+      int show = (N < 100) ? N : 50;
+      int eshow = (E < 100) ? E : 50;
+      // printf("N, %d; E, %d\n", N,E);
+      // printf("show %d\n", show);
       // auto hx  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->m_x);
       // auto hy  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->m_y);
       // auto hz  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->m_z);

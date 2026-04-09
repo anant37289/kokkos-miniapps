@@ -213,14 +213,20 @@ public:
 
   void AllocateGradients(Int_t numElem, Int_t allElem) {
     // Position gradients
-    Kokkos::resize(m_delx_xi,numElem);
-    Kokkos::resize(m_delx_eta,numElem);
-    Kokkos::resize(m_delx_zeta,numElem);
-
+    if(m_delx_xi.size()!=numElem)
+    {
+      Kokkos::resize(m_delx_xi,numElem);
+      Kokkos::resize(m_delx_eta,numElem);
+      Kokkos::resize(m_delx_zeta,numElem);
+    }
+    
     // Velocity gradients
-    Kokkos::resize(m_delv_xi,allElem);
-    Kokkos::resize(m_delv_eta,allElem);
-    Kokkos::resize(m_delv_zeta,allElem);
+    if(m_delv_xi.size()!=allElem)
+    {
+      Kokkos::resize(m_delv_xi,allElem);
+      Kokkos::resize(m_delv_eta,allElem);
+      Kokkos::resize(m_delv_zeta,allElem);
+    }
   }
 
   void DeallocateGradients() {
@@ -234,9 +240,23 @@ public:
   }
 
   void AllocateStrains(Int_t numElem) {
-    Kokkos::resize(m_dxx,numElem);
-    Kokkos::resize(m_dyy,numElem);
-    Kokkos::resize(m_dzz,numElem);
+    if(m_dxx.size()!=numElem)
+    {
+      Kokkos::resize(m_dxx,numElem);
+      Kokkos::resize(m_dyy,numElem);
+      Kokkos::resize(m_dzz,numElem);
+    }
+  }
+
+  void AllocateCalcVolumeForceBuffer(Int_t numElem)
+  {
+      if(sigxx.size()!=numElem)
+      {
+        Kokkos::resize(sigxx, numElem);
+        Kokkos::resize(sigyy, numElem);
+        Kokkos::resize(sigzz, numElem);
+        Kokkos::resize(determ, numElem);
+      }
   }
 
   void DeallocateStrains() {
@@ -576,6 +596,12 @@ public:
   Kokkos::View<Real_t*> m_xdd; /* accelerations */
   Kokkos::View<Real_t*> m_ydd;
   Kokkos::View<Real_t*> m_zdd;
+
+  Kokkos::View<Real_t*> sigxx;
+  Kokkos::View<Real_t*> sigyy;
+  Kokkos::View<Real_t*> sigzz;
+  Kokkos::View<Real_t*> determ;
+
 
   Kokkos::View<Real_t*> m_fx; /* forces */
   Kokkos::View<Real_t*> m_fy;
