@@ -107,7 +107,7 @@ return CalcElemVolume( x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7],
 /////////////////////////////////////////////////////////////////////
 Domain::Domain(Int_t numRanks, Index_t colLoc,
                Index_t rowLoc, Index_t planeLoc,
-               Index_t nx, int tp, int nr, int balance, Int_t cost)
+               Index_t nx, int tp, int nr, int balance, Int_t cost, bool showProg_)
    :
    m_e_cut(Real_t(1.0e-7)),
    m_p_cut(Real_t(1.0e-7)),
@@ -145,6 +145,7 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
 
    m_tp       = tp ;
    m_numRanks = numRanks ;
+   this->showProg = showProg_;
 
    ///////////////////////////////
    //   Initialize Sedov Mesh

@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(Charm_ENABLE_GPU "Build LULESH with Charm++/Kokkos GPU backend" ON)
 
 set(Kokkos_ROOT ${KOKKOS_DIR})
-find_package(Kokkos 4.2 REQUIRED CONFIG)
+find_package(Kokkos REQUIRED CONFIG)
 find_package(MPI REQUIRED COMPONENTS CXX)
 
 set(CMAKE_CXX_STANDARD 17)

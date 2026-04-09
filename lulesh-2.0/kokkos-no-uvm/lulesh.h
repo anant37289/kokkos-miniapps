@@ -131,7 +131,7 @@ class Domain {
 public:
   // Constructor
   Domain(Int_t numRanks, Index_t colLoc, Index_t rowLoc, Index_t planeLoc,
-         Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost);
+         Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost, bool showProg);
 
   // Destructor
   KOKKOS_FUNCTION ~Domain();
@@ -714,6 +714,8 @@ public:
   Index_t m_rowMin, m_rowMax;
   Index_t m_colMin, m_colMax;
   Index_t m_planeMin, m_planeMax;
+
+  bool showProg = false;
 };
 typedef Real_t &(Domain::*Domain_member)(Index_t) const;
 

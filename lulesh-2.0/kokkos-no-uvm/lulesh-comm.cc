@@ -367,9 +367,10 @@ void Copy2D(Kokkos::View<Real_t*> src,
    Kokkos::MDRangePolicy<Kokkos::Rank<2>> policy({0, 0}, {dim_x, dim_y});
    Kokkos::parallel_for("Copy2D", policy,
                        KOKKOS_LAMBDA(const int i, const int j) {
-      dest[dst_offset + j * dst_stride_y + i * dst_stride_x] = 
+      dest[dst_offset + j * dst_stride_y + i * dst_stride_x] =
          src[src_offset + j * src_stride_y + i * src_stride_x];
    });
+   Kokkos::fence();
 }
 
 void Add2D(Kokkos::View<Real_t*> src, 
@@ -383,9 +384,10 @@ void Add2D(Kokkos::View<Real_t*> src,
    Kokkos::MDRangePolicy<Kokkos::Rank<2>> policy({0, 0}, {dim_x, dim_y});
    Kokkos::parallel_for("Add2D", policy,
                        KOKKOS_LAMBDA(const int i, const int j) {
-      dest[dst_offset + j * dst_stride_y + i * dst_stride_x] += 
+      dest[dst_offset + j * dst_stride_y + i * dst_stride_x] +=
          src[src_offset + j * src_stride_y + i * src_stride_x];
    });
+   Kokkos::fence();
 }
 
 /******************************************/
@@ -589,7 +591,7 @@ void CommSend(Domain& domain, int msgType,
          //                                 emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, 0, 1,
+            Copy1D(src, 0, dx*dy,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1, dz);
             // for (Index_t i=0; i<dz; ++i) {
             //    destAddr[i] = (domain.*src)(i*dx*dy) ;
@@ -598,7 +600,7 @@ void CommSend(Domain& domain, int msgType,
          }
          //destAddr -= xferFields*dz ;
          // printf("Send call 6\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dz, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -619,7 +621,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dx ;
          // printf("Send call 7\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dx, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -631,7 +633,7 @@ void CommSend(Domain& domain, int msgType,
          //                                 emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, 0, 1,
+            Copy1D(src, 0, dx,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1, dy);
             // for (Index_t i=0; i<dy; ++i) {
             //    destAddr[i] = (domain.*src)(i*dx) ;
@@ -640,7 +642,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dy ;
          // printf("Send call 8\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dy, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -652,7 +654,7 @@ void CommSend(Domain& domain, int msgType,
          //                                  emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, dx*dy*(dz - 1), 1,
+            Copy1D(src, dx*dy - 1, dx*dy,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1, dz);
             // for (Index_t i=0; i<dz; ++i) {
             //    destAddr[i] = (domain.*src)(dx*dy - 1 + i*dx*dy) ;
@@ -661,7 +663,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dz ;
          // printf("Send call 9\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dz, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -673,7 +675,7 @@ void CommSend(Domain& domain, int msgType,
          //                                 emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, dx*dy*(dz - 1), 1,
+            Copy1D(src, dx*(dy - 1) + dx*dy*(dz - 1), 1,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1, dx);
             // for (Index_t i=0; i<dx; ++i) {
             //   destAddr[i] = (domain.*src)(dx*(dy-1) + dx*dy*(dz-1) + i) ;
@@ -682,7 +684,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dx ;
          // printf("Send call 10\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dx, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -694,7 +696,7 @@ void CommSend(Domain& domain, int msgType,
          //                                  emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, dx*dy*(dz - 1), 1,
+            Copy1D(src, dx*dy*(dz - 1) + dx - 1, dx,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1, dy);
             // for (Index_t i=0; i<dy; ++i) {
             //    destAddr[i] = (domain.*src)(dx*dy*(dz-1) + dx - 1 + i*dx) ;
@@ -703,7 +705,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dy ;
          // printf("Send call 11\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dy, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -715,7 +717,7 @@ void CommSend(Domain& domain, int msgType,
          //                                  emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, dx*dy*(dz - 1), 1,
+            Copy1D(src, dx*(dy - 1), dx*dy,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1, dz);
             // for (Index_t i=0; i<dz; ++i) {
             //    destAddr[i] = (domain.*src)(dx*(dy-1) + i*dx*dy) ;
@@ -724,7 +726,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dz ;
          // printf("Send call 12\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dz, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -745,7 +747,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dx ;
          // printf("Send call 13\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dx, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -757,7 +759,7 @@ void CommSend(Domain& domain, int msgType,
          //                                  emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, dx*dy*(dz - 1), 1,
+            Copy1D(src, dx*dy*(dz - 1), dx,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1, dy);
             // for (Index_t i=0; i<dy; ++i) {
             //    destAddr[i] = (domain.*src)(dx*dy*(dz-1) + i*dx) ;
@@ -766,7 +768,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dy ;
          // printf("Send call 14\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dy, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -778,7 +780,7 @@ void CommSend(Domain& domain, int msgType,
          //                                  emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, dx*dy*(dz - 1), 1,
+            Copy1D(src, dx - 1, dx*dy,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1, dz);
             // for (Index_t i=0; i<dz; ++i) {
             //    destAddr[i] = (domain.*src)(dx - 1 + i*dx*dy) ;
@@ -787,7 +789,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dz ;
          // printf("Send call 15\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dz, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -808,7 +810,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dx ;
          // printf("Send call 16\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dx, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -820,7 +822,7 @@ void CommSend(Domain& domain, int msgType,
          //                                  emsg * maxEdgeComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy1D(src, dx - 1, 1,
+            Copy1D(src, dx - 1, dx,
                domain.commDataSendView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1, dy);
             // for (Index_t i=0; i<dy; ++i) {
             //    destAddr[i] = (domain.*src)(dx - 1 + i*dx) ;
@@ -829,7 +831,7 @@ void CommSend(Domain& domain, int msgType,
          }
          // destAddr -= xferFields*dy ;
          // printf("Send call 17\n");
-         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm, 
+         MPI_Isend(domain.commDataSendView.data() + pmsg * maxPlaneComm + emsg * maxEdgeComm,
                    xferFields*dy, baseType, toRank, msgType,
                    MPI_COMM_WORLD, &domain.sendRequest[pmsg+emsg]) ;
          ++emsg ;
@@ -1050,9 +1052,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Add1D(dest,
-               0, 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, 0, 1,
                opCount);
             //srcAddr += opCount ;
          }
@@ -1064,9 +1065,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Add1D(dest,
-               dx*dy*(dz - 1), 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, dx*dy*(dz - 1), 1,
                opCount);
             //srcAddr += opCount ;
          }
@@ -1084,11 +1084,10 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Add2D(dest,
-               0,
-               1, dx*dy,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
+            Add2D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
                1, dx,
+               dest, 0,
+               1, dx*dy,
                dx, dz);
             //srcAddr += opCount ;
          }
@@ -1100,11 +1099,10 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Add2D(dest,
-               dx*(dy - 1),
-               1, dx*dy,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
+            Add2D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
                1, dx,
+               dest, dx*(dy - 1),
+               1, dx*dy,
                dx, dz);
             //srcAddr += opCount ;
          }
@@ -1121,11 +1119,10 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Add2D(dest,
-               0,
+            Add2D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
+               1, dy,
+               dest, 0,
                dx, dx*dy,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
-               dx, dx,
                dy, dz);
             //srcAddr += opCount ;
          }
@@ -1137,11 +1134,10 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Add2D(dest,
-               dx - 1,
+            Add2D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
+               1, dy,
+               dest, dx - 1,
                dx, dx*dy,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
-               dx, dx,
                dy, dz);
             //srcAddr += opCount ;
          }
@@ -1155,9 +1151,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            0, dx*dy,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+            dest, 0, dx*dy,
             dz);
          // for (Index_t i=0; i<dz; ++i) {
          //    (domain.*dest)(i*dx*dy) += srcAddr[i] ;
@@ -1173,9 +1168,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            0, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+            dest, 0, 1,
             dx);
          // for (Index_t i=0; i<dx; ++i) {
          //    (domain.*dest)(i) += srcAddr[i] ;
@@ -1191,9 +1185,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            0, dx,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+            dest, 0, dx,
             dy);
          // for (Index_t i=0; i<dy; ++i) {
          //    (domain.*dest)(i*dx) += srcAddr[i] ;
@@ -1209,9 +1202,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx*dy - 1, dx*dy,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+            dest, dx*dy - 1, dx*dy,
             dz);
          // for (Index_t i=0; i<dz; ++i) {
          //    (domain.*dest)(dx*dy - 1 + i*dx*dy) += srcAddr[i] ;
@@ -1227,9 +1219,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx*dy*(dz - 1), 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+            dest, dx*(dy - 1) + dx*dy*(dz - 1), 1,
             dx);
          // for (Index_t i=0; i<dx; ++i) {
          //    (domain.*dest)(dx*(dy-1) + dx*dy*(dz-1) + i) += srcAddr[i] ;
@@ -1245,9 +1236,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx - 1 + dx*dy*(dz - 1), dx,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+            dest, dx - 1 + dx*dy*(dz - 1), dx,
             dy);
          // for (Index_t i=0; i<dy; ++i) {
          //    (domain.*dest)(dx*dy*(dz-1) + dx - 1 + i*dx) += srcAddr[i] ;
@@ -1263,9 +1253,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx*(dy-1), dx*dy,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+            dest, dx*(dy-1), dx*dy,
             dz);
          // for (Index_t i=0; i<dz; ++i) {
          //    (domain.*dest)(dx*(dy-1) + i*dx*dy) += srcAddr[i] ;
@@ -1281,9 +1270,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx*dy*(dz - 1), 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+            dest, dx*dy*(dz - 1), 1,
             dx);
          // for (Index_t i=0; i<dx; ++i) {
          //    (domain.*dest)(dx*dy*(dz-1) + i) += srcAddr[i] ;
@@ -1299,9 +1287,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx*dy*(dz - 1), dx,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+            dest, dx*dy*(dz - 1), dx,
             dy);
          // for (Index_t i=0; i<dy; ++i) {
          //    (domain.*dest)(dx*dy*(dz-1) + i*dx) += srcAddr[i] ;
@@ -1317,9 +1304,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx - 1, dx*dy,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+            dest, dx - 1, dx*dy,
             dz);
          // for (Index_t i=0; i<dz; ++i) {
          //    (domain.*dest)(dx - 1 + i*dx*dy) += srcAddr[i] ;
@@ -1335,9 +1321,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx*(dy - 1), 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+            dest, dx*(dy - 1), 1,
             dx);
          // for (Index_t i=0; i<dx; ++i) {
          //    (domain.*dest)(dx*(dy - 1) + i) += srcAddr[i] ;
@@ -1353,9 +1338,8 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(dest,
-            dx - 1, dx,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+            dest, dx - 1, dx,
             dy);
          // for (Index_t i=0; i<dy; ++i) {
          //    (domain.*dest)(dx - 1 + i*dx) += srcAddr[i] ;
@@ -1372,10 +1356,9 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       //                                cmsg * CACHE_COHERENCE_PAD_REAL] ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Add1D(fieldData[fi],
-            0, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], 0, 1,
             1);
          // (domain.*fieldData[fi])(0) += comBuf[fi] ;
       }
@@ -1389,10 +1372,9 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       Index_t idx = dx*dy*(dz - 1) ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Add1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) += comBuf[fi] ;
       }
@@ -1406,10 +1388,9 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       Index_t idx = dx - 1 ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Add1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) += comBuf[fi] ;
       }
@@ -1423,10 +1404,9 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       Index_t idx = dx*dy*(dz - 1) + (dx - 1) ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Add1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) += comBuf[fi] ;
       }
@@ -1440,10 +1420,9 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       Index_t idx = dx*(dy - 1) ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Add1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) += comBuf[fi] ;
       }
@@ -1457,10 +1436,9 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       Index_t idx = dx*dy*(dz - 1) + dx*(dy - 1) ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Add1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) += comBuf[fi] ;
       }
@@ -1474,10 +1452,9 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       Index_t idx = dx*dy - 1 ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Add1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) += comBuf[fi] ;
       }
@@ -1491,10 +1468,9 @@ void CommSBN(Domain& domain, int xferFields, Kokkos::View<Real_t*> *fieldData) {
       Index_t idx = dx*dy*dz - 1 ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Add1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Add1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) += comBuf[fi] ;
       }
@@ -1570,9 +1546,8 @@ void CommSyncPosVel(Domain& domain) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy1D(dest,
-               0, 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, 0, 1,
                opCount);
             // for (Index_t i=0; i<opCount; ++i) {
             //    (domain.*dest)(i) = srcAddr[i] ;
@@ -1587,9 +1562,8 @@ void CommSyncPosVel(Domain& domain) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy1D(dest,
-               dx*dy*(dz - 1), 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, dx*dy*(dz - 1), 1,
                opCount);
             // for (Index_t i=0; i<opCount; ++i) {
             //    (domain.*dest)(dx*dy*(dz - 1) + i) = srcAddr[i] ;
@@ -1610,11 +1584,10 @@ void CommSyncPosVel(Domain& domain) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy2D(dest,
-               0,
-               1, dx*dy,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
+            Copy2D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
                1, dx,
+               dest, 0,
+               1, dx*dy,
                dx, dz);
             // for (Index_t i=0; i<dz; ++i) {
             //    for (Index_t j=0; j<dx; ++j) {
@@ -1631,11 +1604,10 @@ void CommSyncPosVel(Domain& domain) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy2D(dest,
-               dx*(dy - 1),
-               1, dx*dy,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
+            Copy2D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
                1, dx,
+               dest, dx*(dy - 1),
+               1, dx*dy,
                dx, dz);
             // for (Index_t i=0; i<dz; ++i) {
             //    for (Index_t j=0; j<dx; ++j) {
@@ -1658,11 +1630,10 @@ void CommSyncPosVel(Domain& domain) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy2D(dest,
-               0,
+            Copy2D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
+               1, dy,
+               dest, 0,
                dx, dx*dy,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
-               dx, dx,
                dy, dz);
             // for (Index_t i=0; i<dz; ++i) {
             //    for (Index_t j=0; j<dy; ++j) {
@@ -1679,11 +1650,10 @@ void CommSyncPosVel(Domain& domain) {
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy2D(dest,
-               dx - 1,
+            Copy2D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
+               1, dy,
+               dest, dx - 1,
                dx, dx*dy,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount,
-               dx, dx,
                dy, dz);
             // for (Index_t i=0; i<dz; ++i) {
             //    for (Index_t j=0; j<dy; ++j) {
@@ -1702,9 +1672,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            0, dx*dy,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+            dest, 0, dx*dy,
             dz);
          // for (Index_t i=0; i<dz; ++i) {
          //    (domain.*dest)(i*dx*dy) = srcAddr[i] ;
@@ -1720,9 +1689,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            0, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+            dest, 0, 1,
             dx);
          // for (Index_t i=0; i<dx; ++i) {
          //    (domain.*dest)(i) = srcAddr[i] ;
@@ -1738,9 +1706,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            0, dx,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+            dest, 0, dx,
             dy);
          // for (Index_t i=0; i<dy; ++i) {
          //    (domain.*dest)(i*dx) = srcAddr[i] ;
@@ -1756,9 +1723,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx*dy - 1, dx*dy,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+            dest, dx*dy - 1, dx*dy,
             dz);
          // for (Index_t i=0; i<dz; ++i) {
          //    (domain.*dest)(dx*dy - 1 + i*dx*dy) = srcAddr[i] ;
@@ -1774,9 +1740,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx*dy*(dz - 1), 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+            dest, dx*(dy - 1) + dx*dy*(dz - 1), 1,
             dx);
          // for (Index_t i=0; i<dx; ++i) {
          //    (domain.*dest)(dx*(dy-1) + dx*dy*(dz-1) + i) = srcAddr[i] ;
@@ -1792,9 +1757,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx - 1 + dx*dy*(dz - 1), dx,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+            dest, dx - 1 + dx*dy*(dz - 1), dx,
             dy);
          // for (Index_t i=0; i<dy; ++i) {
          //    (domain.*dest)(dx*dy*(dz-1) + dx - 1 + i*dx) = srcAddr[i] ;
@@ -1810,9 +1774,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx*(dy-1), dx*dy,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+            dest, dx*(dy-1), dx*dy,
             dz);
          // for (Index_t i=0; i<dz; ++i) {
          //    (domain.*dest)(dx*(dy-1) + i*dx*dy) = srcAddr[i] ;
@@ -1828,9 +1791,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx*dy*(dz - 1), 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+            dest, dx*dy*(dz - 1), 1,
             dx);
          // for (Index_t i=0; i<dx; ++i) {
          //    (domain.*dest)(dx*dy*(dz-1) + i) = srcAddr[i] ;
@@ -1846,9 +1808,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx*dy*(dz - 1), dx,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+            dest, dx*dy*(dz - 1), dx,
             dy);
          // for (Index_t i=0; i<dy; ++i) {
          //    (domain.*dest)(dx*dy*(dz-1) + i*dx) = srcAddr[i] ;
@@ -1864,9 +1825,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx - 1, dx*dy,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dz, 1,
+            dest, dx - 1, dx*dy,
             dz);
          // for (Index_t i=0; i<dz; ++i) {
          //    (domain.*dest)(dx - 1 + i*dx*dy) = srcAddr[i] ;
@@ -1882,9 +1842,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx*(dy - 1), 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dx, 1,
+            dest, dx*(dy - 1), 1,
             dx);
          // for (Index_t i=0; i<dx; ++i) {
          //    (domain.*dest)(dx*(dy - 1) + i) = srcAddr[i] ;
@@ -1900,9 +1859,8 @@ void CommSyncPosVel(Domain& domain) {
       MPI_Wait(&domain.recvRequest[pmsg+emsg], &status) ;
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Copy1D(dest,
-            dx - 1, dx,
-            domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + emsg * maxEdgeComm + fi * dy, 1,
+            dest, dx - 1, dx,
             dy);
          // for (Index_t i=0; i<dy; ++i) {
          //    (domain.*dest)(dx - 1 + i*dx) = srcAddr[i] ;
@@ -1920,10 +1878,9 @@ void CommSyncPosVel(Domain& domain) {
       //                                 cmsg * CACHE_COHERENCE_PAD_REAL] ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Copy1D(fieldData[fi],
-            0, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], 0, 1,
             1);
          // (domain.*fieldData[fi])(0) = comBuf[fi] ;
       }
@@ -1937,10 +1894,9 @@ void CommSyncPosVel(Domain& domain) {
       Index_t idx = dx*dy*(dz - 1) ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Copy1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) = comBuf[fi] ;
       }
@@ -1954,10 +1910,9 @@ void CommSyncPosVel(Domain& domain) {
       Index_t idx = dx - 1 ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Copy1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) = comBuf[fi] ;
       }
@@ -1971,10 +1926,9 @@ void CommSyncPosVel(Domain& domain) {
       Index_t idx = dx*dy*(dz - 1) + (dx - 1) ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Copy1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) = comBuf[fi] ;
       }
@@ -1988,10 +1942,9 @@ void CommSyncPosVel(Domain& domain) {
       Index_t idx = dx*(dy - 1) ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Copy1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) = comBuf[fi] ;
       }
@@ -2005,10 +1958,9 @@ void CommSyncPosVel(Domain& domain) {
       Index_t idx = dx*dy*(dz - 1) + dx*(dy - 1) ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Copy1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) = comBuf[fi] ;
       }
@@ -2022,10 +1974,9 @@ void CommSyncPosVel(Domain& domain) {
       Index_t idx = dx*dy - 1 ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Copy1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) = comBuf[fi] ;
       }
@@ -2039,10 +1990,9 @@ void CommSyncPosVel(Domain& domain) {
       Index_t idx = dx*dy*dz - 1 ;
       MPI_Wait(&domain.recvRequest[pmsg+emsg+cmsg], &status) ;
       for (Index_t fi=0; fi<xferFields; ++fi) {
-         Copy1D(fieldData[fi],
-            idx, 1,
-            domain.commDataRecvView, pmsg * maxPlaneComm +
+         Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm +
             emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL + fi, 1,
+            fieldData[fi], idx, 1,
             1);
          // (domain.*fieldData[fi])(idx) = comBuf[fi] ;
       }
@@ -2118,9 +2068,8 @@ void CommMonoQ(Domain& domain)
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy1D(dest,
-               fieldOffset[fi], 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, fieldOffset[fi], 1,
                opCount);
             // for (Index_t i=0; i<opCount; ++i) {
             //    (domain.*dest)(fieldOffset[fi] + i) = srcAddr[i] ;
@@ -2136,9 +2085,8 @@ void CommMonoQ(Domain& domain)
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy1D(dest,
-               fieldOffset[fi], 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, fieldOffset[fi], 1,
                opCount);
             // for (Index_t i=0; i<opCount; ++i) {
             //    (domain.*dest)(fieldOffset[fi] + i) = srcAddr[i] ;
@@ -2160,9 +2108,8 @@ void CommMonoQ(Domain& domain)
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy1D(dest,
-               fieldOffset[fi], 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, fieldOffset[fi], 1,
                opCount);
             // for (Index_t i=0; i<opCount; ++i) {
             //    (domain.*dest)(fieldOffset[fi] + i) = srcAddr[i] ;
@@ -2178,9 +2125,8 @@ void CommMonoQ(Domain& domain)
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy1D(dest,
-               fieldOffset[fi], 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, fieldOffset[fi], 1,
                opCount);
             // for (Index_t i=0; i<opCount; ++i) {
             //    (domain.*dest)(fieldOffset[fi] + i) = srcAddr[i] ;
@@ -2201,9 +2147,8 @@ void CommMonoQ(Domain& domain)
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy1D(dest,
-               fieldOffset[fi], 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, fieldOffset[fi], 1,
                opCount);
             // for (Index_t i=0; i<opCount; ++i) {
             //    (domain.*dest)(fieldOffset[fi] + i) = srcAddr[i] ;
@@ -2219,9 +2164,8 @@ void CommMonoQ(Domain& domain)
          MPI_Wait(&domain.recvRequest[pmsg], &status) ;
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> dest = fieldData[fi] ;
-            Copy1D(dest,
-               fieldOffset[fi], 1,
-               domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+            Copy1D(domain.commDataRecvView, pmsg * maxPlaneComm + fi * opCount, 1,
+               dest, fieldOffset[fi], 1,
                opCount);
             // for (Index_t i=0; i<opCount; ++i) {
             //    (domain.*dest)(fieldOffset[fi] + i) = srcAddr[i] ;
