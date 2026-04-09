@@ -41,8 +41,8 @@ void PrintState(Domain& locDom, int myRank) {
   Kokkos::fence();
   int N = locDom.numNode();
   int E = locDom.numElem();
-  int show = (N < 100) ? N : 50;
-  int eshow = (E < 100) ? E : 50;
+  int show = (N < 10) ? N : 5;
+  int eshow = (E < 10) ? E : 5;
   
   auto hx  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_x);
   auto hy  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_y);
@@ -1111,11 +1111,11 @@ CalcElemVelocityGradient(const Real_t *const xvel, const Real_t *const yvel,
 
 void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, ExecSpace execSpace) {
 
-  // Kokkos::View<Real_t*> volume_s("volume", numElem);
-  // Kokkos::View<Real_t**> x_local_s("x", numElem, 8);
-  // Kokkos::View<Real_t**> y_local_s("y", numElem, 8);
-  // Kokkos::View<Real_t**> z_local_s("z", numElem, 8);
-  // Kokkos::fence();
+  Kokkos::View<Real_t*> volume_s("volume", numElem);
+  Kokkos::View<Real_t**> x_local_s("x", numElem, 8);
+  Kokkos::View<Real_t**> y_local_s("y", numElem, 8);
+  Kokkos::View<Real_t**> z_local_s("z", numElem, 8);
+  Kokkos::fence();
 
   Kokkos::parallel_for("CalcKinematicsForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int k) {
@@ -1136,15 +1136,15 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     CollectDomainNodesToElemNodes(domain, elemToNode, x_local, y_local,
                                   z_local);
 
-    // for(int i=0;i<8;i++)
-    // {
-    //   x_local_s(k, i) = x_local[i];
-    //   y_local_s(k, i) = y_local[i];
-    //   z_local_s(k, i) = z_local[i];
-    // }
+    for(int i=0;i<8;i++)
+    {
+      x_local_s(k, i) = x_local[i];
+      y_local_s(k, i) = y_local[i];
+      z_local_s(k, i) = z_local[i];
+    }
 
     volume = CalcElemVolume(x_local, y_local, z_local);
-    // volume_s(k) = volume; 
+    volume_s(k) = volume; 
     relativeVolume = volume / domain.volo(k);
     domain.vnew(k) = relativeVolume;
     domain.delv(k) = relativeVolume - domain.v(k);
@@ -1175,31 +1175,34 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     domain.dzz(k) = D[2];
   });
 
-  // if(domain.flatIndex==0)
-  //  printf("numelem %d\n", numElem);
-  // auto h_volume_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), volume_s);
-  // auto h_x_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), x_local_s);
-  // auto h_y_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), y_local_s);
-  // auto h_z_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), z_local_s);
+  if(domain.flatIndex==0)
+   printf("numelem %d\n", numElem);
+  auto h_volume_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), volume_s);
+  auto h_x_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), x_local_s);
+  auto h_y_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), y_local_s);
+  auto h_z_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), z_local_s);
   
-  // if(domain.flatIndex==0)
-  // {
-  //   for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
-  //   {
-  //     printf("%.10e ", h_volume_s(i));
-  //   }
-  //   printf("\n");
-  // }
+  if(domain.flatIndex==0)
+  {
+    for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+    {
+      printf("%.10e ", h_volume_s(i));
+    }
+    printf("\n");
+  }
 
-  // if(domain.flatIndex==0)
-  // {
-  //   for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
-  //   {
-  //     for(int j = 0;j<8;j++)
-  //       printf("(%.10e, %.10e, %.10e)", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
-  //     printf("\n");
-  //   }
-  // }
+  if(domain.flatIndex==0)
+  {
+    for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+    {
+      for(int j = 0;j<8;j++)
+        printf("(%.10e, %.10e, %.10e) ", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
+      printf("\n");
+    }
+  }
+
+  fflush(stderr);
+  fflush(stdout);
 
 }
 

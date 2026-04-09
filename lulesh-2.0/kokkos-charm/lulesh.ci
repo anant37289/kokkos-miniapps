@@ -4,6 +4,7 @@ mainmodule lulesh {
     readonly CProxy_Main mainProxy;
     readonly CProxy_KokkosManager kokkosProxy;
     readonly CProxy_DomainChare domainProxy;
+    readonly int do_atomic;
 
     message PackingDoneMsg;
 
@@ -177,8 +178,7 @@ mainmodule lulesh {
             }
 
             serial "AfterForceRecv" {
-                // Kokkos::fence();
-                // computeSpace.fence();
+                applyBufferedForce();
             }
 
             serial "LagrangeNodal" {
@@ -236,7 +236,7 @@ mainmodule lulesh {
 
             serial "AfterPosVelRecv" {
                 applyBufferedPosVel();
-                Kokkos::fence();
+                // Kokkos::fence();
             }
 
             serial "LagrangeElements" {
@@ -275,14 +275,17 @@ mainmodule lulesh {
             }
 
             serial "AfterQRecv" {
-                Kokkos::fence();
+                // Kokkos::fence();
+                // I am not sure if ordering this will be as much of a help and why the ordering earlier is a help at all??
+                // so the ordering code with process and the apply is removed
+                // maybe its because of this is using only copy1D for some reason...   
             }
 
             serial "LagrangeElementsPost" {
                 Domain &domain = *locDom;
                 CalcMonotonicQForElems(domain, computeSpace);
 
-                domain.DeallocateGradients();
+                // domain.DeallocateGradients();
 
                 CheckQStop(domain, computeSpace);
 
@@ -292,7 +295,7 @@ mainmodule lulesh {
 
                 CalcTimeConstraintsForElems(domain, computeSpace);
 
-                if(flatIndex==0)
+                if(flatIndex==0 && opts.showProg)
                     PrintState(*locDom, flatIndex);
 
                 iter++;

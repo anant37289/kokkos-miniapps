@@ -576,6 +576,9 @@ public:
 
   Kokkos::View<Real_t*> commDataSendView;
   Kokkos::View<Real_t*> commDataRecvView;
+  Kokkos::View<Real_t*> commDataRecvViewSBN;
+  Kokkos::View<Real_t*> commDataRecvViewPosVel;
+  Kokkos::View<Real_t*> commDataRecvViewMonoQ;
 
   void BuildMesh(Int_t nx, Int_t edgeNodes, Int_t edgeElems);
   void SetupThreadSupportStructures();

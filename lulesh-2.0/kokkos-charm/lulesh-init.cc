@@ -485,9 +485,15 @@ Domain::SetupCommBuffers(Int_t edgeNodes)
 
   Kokkos::resize(this->commDataSendView, comBufSize);
   Kokkos::resize(this->commDataRecvView, comBufSize);
+  Kokkos::resize(this->commDataRecvViewSBN, comBufSize);
+  Kokkos::resize(this->commDataRecvViewPosVel, comBufSize);
+  Kokkos::resize(this->commDataRecvViewMonoQ, comBufSize);
 
   Kokkos::deep_copy(this->commDataSendView, 0);
   Kokkos::deep_copy(this->commDataRecvView, 0);
+  Kokkos::deep_copy(this->commDataRecvViewSBN, 0);
+  Kokkos::deep_copy(this->commDataRecvViewPosVel, 0);
+  Kokkos::deep_copy(this->commDataRecvViewMonoQ, 0);
 
   // prevent floating point exceptions 
   //memset(this->commDataSend, 0, comBufSize*sizeof(Real_t)) ;

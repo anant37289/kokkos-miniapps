@@ -125,12 +125,11 @@ class Domain {
    // Constructor
    Domain(Int_t numRanks, Index_t colLoc,
           Index_t rowLoc, Index_t planeLoc,
-          Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost);
+          Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost, Int_t flatIndex, bool showProg);
 
    //
    // ALLOCATION
    //
-
    void AllocateNodePersistent(Int_t numNode) // Node-centered
    {
       m_coord.resize(numNode);  // coordinates
@@ -550,6 +549,7 @@ class Domain {
    Index_t m_rowMin, m_rowMax;
    Index_t m_colMin, m_colMax;
    Index_t m_planeMin, m_planeMax ;
+   Int_t flatIndex;
 
 } ;
 
