@@ -1093,6 +1093,8 @@ CalcElemVelocityGradient(const Real_t *const xvel, const Real_t *const yvel,
 
 void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem) {
 
+
+
   Kokkos::parallel_for("CalcKinematicsForElems", numElem,
                        KOKKOS_LAMBDA(const int k) {
     Real_t B[3][8];
@@ -1113,6 +1115,7 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem) {
                                   z_local);
 
     volume = CalcElemVolume(x_local, y_local, z_local);
+    
     relativeVolume = volume / domain.volo(k);
     domain.vnew(k) = relativeVolume;
     domain.delv(k) = relativeVolume - domain.v(k);
@@ -1142,6 +1145,9 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem) {
     domain.dyy(k) = D[1];
     domain.dzz(k) = D[2];
   });
+
+
+
 }
 
 static inline void CalcLagrangeElements(Domain &domain) {
@@ -1779,6 +1785,7 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
   Real_t *q_new = AllocateFromBuffer<Real_t>(numElemReg);
   Real_t *bvc = AllocateFromBuffer<Real_t>(numElemReg);
   Real_t *pbvc = AllocateFromBuffer<Real_t>(numElemReg);
+  
 
   for (Int_t j = 0; j < rep; j++) {
     Kokkos::parallel_for("EvalEOSForElems A", numElemReg,
@@ -2145,6 +2152,49 @@ int main(int argc, char *argv[]) {
     if ((opts.showProg != 0) && (opts.quiet == 0) && (myRank == 0)) {
       printf("cycle = %d, time = %e, dt=%e\n", locDom.cycle(),
              double(locDom.time()), double(locDom.deltatime()));
+    }
+
+    // --- STATE DUMP ---
+    if(myRank==0){
+      Kokkos::fence();
+      int N = locDom.numNode();
+      int E = locDom.numElem();
+      int show = (N < 10) ? N : 9;
+      int eshow = (E < 10) ? E : 9;
+      auto hx  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_x);
+      auto hy  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_y);
+      auto hz  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_z);
+      auto hxd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_xd);
+      auto hyd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_yd);
+      auto hzd = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_zd);
+      auto he  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_e);
+      auto hp  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_p);
+      auto hq  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_q);
+      auto hv  = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_v);
+      auto hvn = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_vnew);
+      auto hfx = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_fx);
+      auto hfy = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_fy);
+      auto hfz = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom.m_fz);
+      printf("[nouvm rank=%d cycle=%d] dt=%.10e time=%.10e\n", myRank, locDom.cycle(), 
+             double(locDom.deltatime()), double(locDom.time()));
+      printf("  x : "); for(int i=0;i<show/2;i++) printf("%.10e ",hx(i)); for(int i=N-1-show/2;i<=N-1;i++) printf("... %.10e\n",hx(i));
+      printf("  y : "); for(int i=0;i<show;i++) printf("%.10e ",hy(i)); for(int i=N-1-show/2;i<=N-1;i++)printf("... %.10e\n",hy(i));
+      printf("  z : "); for(int i=0;i<show;i++) printf("%.10e ",hz(i)); for(int i=N-1-show/2;i<=N-1;i++)printf("... %.10e\n",hz(i));
+      printf("  xd: "); for(int i=0;i<show;i++) printf("%.10e ",hxd(i));for(int i=N-1-show/2;i<=N-1;i++) printf("... %.10e\n",hxd(i));
+      printf("  yd: "); for(int i=0;i<show;i++) printf("%.10e ",hyd(i));for(int i=N-1-show/2;i<=N-1;i++) printf("... %.10e\n",hyd(i));
+      printf("  zd: "); for(int i=0;i<show;i++) printf("%.10e ",hzd(i));for(int i=N-1-show/2;i<=N-1;i++) printf("... %.10e\n",hzd(i));
+      printf("  e : "); for(int i=0;i<eshow;i++) printf("%.10e ",he(i));for(int i=E-1-eshow/2;i<=E-1;i++) printf("... %.10e\n",he(i));
+      printf("  p : "); for(int i=0;i<eshow;i++) printf("%.10e ",hp(i));for(int i=E-1-eshow/2;i<=E-1;i++) printf("... %.10e\n",hp(i));
+      printf("  q : "); for(int i=0;i<eshow;i++) printf("%.10e ",hq(i));for(int i=E-1-eshow/2;i<=E-1;i++) printf("... %.10e\n",hq(i));
+      printf("  v : "); for(int i=0;i<eshow;i++) printf("%.10e ",hv(i));for(int i=E-1-eshow/2;i<=E-1;i++) printf("... %.10e\n",hv(i));
+      printf("  vn: "); for(int i=0;i<eshow;i++) printf("%.10e ",hvn(i));for(int i=E-1-eshow/2;i<=E-1;i++) printf("... %.10e\n",hvn(i));
+      printf("  fx: "); for(int i=0;i<show;i++) printf("%.10e ",hfx(i));for(int i=N-1-show/2;i<=N-1;i++) printf("... %.10e\n",hfx(i));
+      printf("  fy: "); for(int i=0;i<show;i++) printf("%.10e ",hfy(i));for(int i=N-1-show/2;i<=N-1;i++) printf("... %.10e\n",hfy(i));
+      printf("  fz: "); for(int i=0;i<show;i++) printf("%.10e ",hfz(i));for(int i=N-1-show/2;i<=N-1;i++) printf("... %.10e\n",hfz(i));
+      // find min vnew
+      Real_t minvn = hvn(0);
+      for(int i=1;i<E;i++) if(hvn(i)<minvn) minvn=hvn(i);
+      printf("  min_vnew=%.10e\n", double(minvn));
     }
   }
 

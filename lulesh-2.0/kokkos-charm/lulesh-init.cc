@@ -265,17 +265,6 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
    }
    this->flatIndex = flatIndex;
 
-   if(flatIndex==0)
-   {
-     for(int i=0;i < min(h_volo.size(), (size_t)3);i++)
-       printf("%.10e ", h_volo(i));
-
-    printf(" ... ");
-
-    for(int i=h_volo.size() - 3;i<h_volo.size();i++)
-      printf("%.10e ", h_volo(i));
-   }
-
     printf("\n");
 
    Kokkos::deep_copy(m_volo, h_volo);
@@ -514,7 +503,7 @@ void
 Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
 {
    srand(CkMyPe()); // FIXME
-   Index_t myRank = 0;
+   Index_t myRank = this->flatIndex;
    this->numReg() = nr;
    m_regElemSize = AllocateHost<Index_t>(numReg());
    auto row_map = Kokkos::View<Index_t*>("regElemlist::row_map",numReg()+1);

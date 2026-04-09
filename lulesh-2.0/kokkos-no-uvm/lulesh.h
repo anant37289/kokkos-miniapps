@@ -22,7 +22,7 @@
 #endif
 
 #include <Kokkos_Core.hpp>
-#include <Kokkos_Vector.hpp>
+// #include <Kokkos_Vector.hpp>
 #include <Kokkos_StaticCrsGraph.hpp>
 
 #include <math.h>

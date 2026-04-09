@@ -715,15 +715,14 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   NVTXTracer(os.str(), NVTXColor::GreenSea);
   os.clear();
   if(!do_atomic) {
-    // execSpace.fence(); // Required: Phase A writes fx_elem, Phase B reads it
     os << "CalcFBHourglassForceForElems B ";
     NVTXTracer(os.str(), NVTXColor::Turquoise);
     os.clear();
     int team_size = 1;
     if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
-    //CalcFBHourglassForceForElems B
-     Kokkos::parallel_for (Kokkos::Experimental::require(Kokkos::TeamPolicy<ExecSpace>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    //
+     Kokkos::parallel_for ("CalcFBHourglassForceForElems B", Kokkos::Experimental::require(Kokkos::TeamPolicy<ExecSpace>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
      {
        const Index_t gnode_begin = team.league_rank()*128;
@@ -1224,7 +1223,7 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
     CalcKinematicsForElems(domain, deltatime, numElem, execSpace);
 
     int error = 0;
-    Kokkos::parallel_reduce(RangePolicy(execSpace, 0, numElem),
+    Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int k, int& err) {
       Real_t vdov = domain.dxx(k) + domain.dyy(k) + domain.dzz(k);
       Real_t vdovthird = vdov / Real_t(3.0);
@@ -1242,7 +1241,7 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
     if(error)
      CkAbort("VolumeError3");
 
-    domain.DeallocateStrains();
+    // domain.DeallocateStrains();
   }
 }
 
@@ -1391,7 +1390,7 @@ static inline void CalcMonotonicQRegionForElems(Domain &domain, Int_t r,
   Real_t qlc_monoq = domain.qlc_monoq();
   Real_t qqc_monoq = domain.qqc_monoq();
 
-  Kokkos::parallel_for("CalcMonotonicQRegionForElems", RangePolicy(execSpace, 0, domain.regElemSize(r)),
+  Kokkos::parallel_for("CalcMonotonicQRegionForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, domain.regElemSize(r)),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     Index_t ielem = domain.regElemlist(r, i);
     Real_t qlin, qquad;
@@ -1646,7 +1645,7 @@ CalcEnergyForElems(Real_t *p_new, Real_t *e_new, Real_t *q_new, Real_t *bvc,
                    Real_t e_cut, Real_t q_cut, Real_t emin, Real_t *qq_old,
                    Real_t *ql_old, Real_t rho0, Real_t eosvmax, Index_t length,
                    Domain& domain, Index_t r, ExecSpace execSpace) {
-  Kokkos::parallel_for ("CalcEnergyForElems", RangePolicy(execSpace, 0, length), KOKKOS_LAMBDA (const int i){
+  Kokkos::parallel_for ("CalcEnergyForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), KOKKOS_LAMBDA (const int i){
      const Real_t delvc_i = delvc[i];
      const Real_t p_old_i = p_old[i];
      const Real_t q_old_i = q_old[i];
@@ -1764,7 +1763,7 @@ static inline void CalcSoundSpeedForElems(Domain &domain, Real_t *vnewc,
                                           Real_t *pnewc, Real_t *pbvc,
                                           Real_t *bvc, Real_t ss4o3,
                                           Index_t len, Index_t r, ExecSpace execSpace) {
-  Kokkos::parallel_for("CalcSoundSpeedForElems", RangePolicy(execSpace, 0, len),
+  Kokkos::parallel_for("CalcSoundSpeedForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, len),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     Index_t ielem = domain.regElemlist(r,i);
     Real_t ssTmp =
@@ -1810,8 +1809,10 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
   Real_t *bvc = domain.AllocateFromBuffer<Real_t>(numElemReg);
   Real_t *pbvc = domain.AllocateFromBuffer<Real_t>(numElemReg);
 
+  // if(domain.flatIndex==0)
+  //   printf("calling EvalEOSForElems for %d rep\n", rep);
   for (Int_t j = 0; j < rep; j++) {
-    Kokkos::parallel_for("EvalEOSForElems A", RangePolicy(execSpace, 0, numElemReg),
+    Kokkos::parallel_for("EvalEOSForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElemReg),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i) {
       Index_t ielem = domain.regElemlist(r,i);
       e_old[i] = domain.c_e(ielem);
@@ -1847,7 +1848,7 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
                        numElemReg, domain, r, execSpace);
   }
 
-  Kokkos::parallel_for("EvalEOSForElems F", RangePolicy(execSpace, 0, numElemReg),
+  Kokkos::parallel_for("EvalEOSForElems F",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElemReg),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     Index_t ielem = domain.regElemlist(r,i);
     domain.p(ielem) = p_new[i];
@@ -1865,14 +1866,16 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
   if (numElem != 0) {
     Real_t eosvmin = domain.eosvmin();
     Real_t eosvmax = domain.eosvmax();
-    Kokkos::View<Real_t*> vnewc("vnewc",numElem);
+    domain.AllocateVnewc(numElem);
+
+    auto vnewc = domain.vnewc;
 
     Kokkos::parallel_for(
-        "ApplyMaterialPropertiesForElems A", RangePolicy(execSpace, 0, numElem),
+        "ApplyMaterialPropertiesForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA(const int i) { vnewc[i] = domain.vnew(i); });
 
     if (eosvmin != Real_t(0.)) {
-      Kokkos::parallel_for("ApplyMaterialPropertiesForElems B", RangePolicy(execSpace, 0, numElem),
+      Kokkos::parallel_for("ApplyMaterialPropertiesForElems B",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                            KOKKOS_LAMBDA(const int i) {
         if (vnewc[i] < eosvmin)
           vnewc[i] = eosvmin;
@@ -1880,7 +1883,7 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
     }
 
     if (eosvmax != Real_t(0.)) {
-      Kokkos::parallel_for("ApplyMaterialPropertiesForElems C", RangePolicy(execSpace, 0, numElem),
+      Kokkos::parallel_for("ApplyMaterialPropertiesForElems C",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                            KOKKOS_LAMBDA(const int i) {
         if (vnewc[i] > eosvmax)
           vnewc[i] = eosvmax;
@@ -1888,7 +1891,7 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
     }
 
     int error = 0;
-    Kokkos::parallel_reduce("ApplyMaterialPropertiesForElems D", RangePolicy(execSpace, 0, numElem),
+    Kokkos::parallel_reduce("ApplyMaterialPropertiesForElems D",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i, int& err) {
       Real_t vc = domain.v(i);
       if (eosvmin != Real_t(0.)) {
@@ -1926,7 +1929,7 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
 static inline void UpdateVolumesForElems(Domain &domain, Real_t v_cut,
                                          Index_t length, ExecSpace execSpace) {
   if (length != 0) {
-    Kokkos::parallel_for("UpdateVolumesForElems", RangePolicy(execSpace, 0, length),
+    Kokkos::parallel_for("UpdateVolumesForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i) {
       Real_t tmpV = domain.vnew(i);
 
@@ -1954,7 +1957,7 @@ static inline void CalcCourantConstraintForElems(Domain &domain, Index_t length,
   MinFinder result;
 
   Kokkos::parallel_reduce(
-      RangePolicy(execSpace, 0, length), KOKKOS_LAMBDA(const int i, MinFinder &minf) {
+       Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), KOKKOS_LAMBDA(const int i, MinFinder &minf) {
                 Index_t indx = domain.regElemlist(r,i);
                 Real_t dtf = domain.ss(indx) * domain.ss(indx);
 
@@ -2000,7 +2003,7 @@ static inline void CalcHydroConstraintForElems(Domain &domain, Index_t length,
   Index_t hydro_elem = -1;
   MinFinder result;
 
-  Kokkos::parallel_reduce(RangePolicy(execSpace, 0, length), KOKKOS_LAMBDA(const int i, MinFinder &minf) {
+  Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), KOKKOS_LAMBDA(const int i, MinFinder &minf) {
                                     Index_t indx = domain.regElemlist(r,i);
 
                                     if (domain.vdov(indx) != Real_t(0.)) {
@@ -2029,7 +2032,7 @@ static inline void CalcHydroConstraintForElems(Domain &domain, Index_t length,
 
 static inline void CheckQStop(Domain &domain, ExecSpace execSpace) {
   Index_t idx = 0;
-  Kokkos::parallel_reduce(RangePolicy(execSpace, 0, domain.numElem()), 
+  Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, domain.numElem()),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
       KOKKOS_LAMBDA (const Index_t& i, Index_t& count) {
       if ( domain.q(i) > domain.qstop() ) {
           count++ ;

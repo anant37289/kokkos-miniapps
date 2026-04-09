@@ -600,7 +600,7 @@ void DomainChare::CommSend(Domain& domain, int msgType,
          }
       }
 
-      commSpace.fence();
+      // commSpace.fence();
 
       CkCallback* cb = new CkCallback(CkIndex_DomainChare::packingDone(NULL), thisProxy[thisIndex]);
       int sendCount = xferFields * cdata.size[0] * cdata.size[1];
@@ -882,7 +882,7 @@ void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFiel
             dest, dstOff, 1, copyLen, commSpace);
       }
    }
-   commSpace.fence();
+   // commSpace.fence();
 }
 
 /******************************************/

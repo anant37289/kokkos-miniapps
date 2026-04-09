@@ -277,15 +277,26 @@ public:
   }
 
   void AllocateStrains(Int_t numElem) {
-    Kokkos::resize(m_dxx,numElem);
-    Kokkos::resize(m_dyy,numElem);
-    Kokkos::resize(m_dzz,numElem);
+    if(m_dxx.size()!=numElem)
+    {
+      Kokkos::resize(m_dxx,numElem);
+      Kokkos::resize(m_dyy,numElem);
+      Kokkos::resize(m_dzz,numElem);
+    }
   }
 
   void DeallocateStrains() {
     m_dzz = Kokkos::View<Real_t*>();
     m_dyy = Kokkos::View<Real_t*>();
     m_dxx = Kokkos::View<Real_t*>();
+  }
+
+  void AllocateVnewc(Int_t numElem)
+  {
+    if(vnewc.size()!=numElem)
+    {
+      Kokkos::resize(vnewc, numElem);
+    }
   }
 
   //
@@ -626,6 +637,8 @@ public:
   Kokkos::View<Index_t*> m_symmX; /* symmetry plane nodesets */
   Kokkos::View<Index_t*> m_symmY;
   Kokkos::View<Index_t*> m_symmZ;
+
+  Kokkos::View<Real_t*> vnewc;
 
   // Element-centered
 

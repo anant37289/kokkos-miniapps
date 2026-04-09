@@ -600,8 +600,9 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
       regElemSize(r)++;
    }
    // Second, allocate each region index set
+   h_row_map(0) = 0;
    for (Index_t i=0 ; i<numReg() ; ++i) {
-      h_row_map(i+1) = regElemSize(i);
+      h_row_map(i+1) = h_row_map(i) + regElemSize(i);
       regElemSize(i) = 0;
    }
    // Third, fill index sets

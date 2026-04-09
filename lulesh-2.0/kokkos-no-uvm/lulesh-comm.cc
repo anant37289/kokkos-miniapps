@@ -507,7 +507,7 @@ void CommSend(Domain& domain, int msgType,
          //destAddr = &domain.commDataSend[pmsg * maxPlaneComm] ;
          for (Index_t fi=0; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
-            Copy2D(src, dx*dy*(dy - 1),
+            Copy2D(src, dx*(dy - 1),
                1, dx*dy,
                domain.commDataSendView, pmsg * maxPlaneComm + fi * sendCount,
                1, dx,
