@@ -1252,7 +1252,7 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
 static inline void CalcMonotonicQGradientsForElems(Domain &domain, ExecSpace execSpace) {
   Index_t numElem = domain.numElem();
 
-  Kokkos::parallel_for("CalcMonotonicQGradientsForElems", RangePolicy(execSpace, 0, numElem),
+  Kokkos::parallel_for("CalcMonotonicQGradientsForElems", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     const Real_t ptiny = Real_t(1.e-36);
     Real_t ax, ay, az;

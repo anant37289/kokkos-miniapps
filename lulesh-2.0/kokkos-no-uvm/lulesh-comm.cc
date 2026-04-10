@@ -336,7 +336,7 @@ void Copy1D(Kokkos::View<Real_t*> src, int src_offset,
     Kokkos::View<Real_t*> dest, int dst_offset, int dst_stride,
    int size)
 {
-   Kokkos::parallel_for("Copy1D", size,
+   Kokkos::parallel_for("Copy1D",  Kokkos::Experimental::require(RangePolicy(0,size),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
       dest[dst_offset + i * dst_stride] = src[src_offset + i * src_stride];
    });
@@ -347,7 +347,7 @@ void Add1D(Kokkos::View<Real_t*> src, int src_offset, int src_stride,
    Kokkos::View<Real_t*> dest, int dst_offset, int dst_stride,
    int size)
 {
-   Kokkos::parallel_for("Add1D", size,
+   Kokkos::parallel_for("Add1D",  Kokkos::Experimental::require(RangePolicy(0,size),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
       dest[dst_offset + i * dst_stride] += src[src_offset + i * src_stride];
    });
@@ -365,7 +365,7 @@ void Copy2D(Kokkos::View<Real_t*> src,
    int dim_x, int dim_y)
 {
    Kokkos::MDRangePolicy<Kokkos::Rank<2>> policy({0, 0}, {dim_x, dim_y});
-   Kokkos::parallel_for("Copy2D", policy,
+   Kokkos::parallel_for("Copy2D", Kokkos::Experimental::require(policy,  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i, const int j) {
       dest[dst_offset + j * dst_stride_y + i * dst_stride_x] =
          src[src_offset + j * src_stride_y + i * src_stride_x];
@@ -382,7 +382,7 @@ void Add2D(Kokkos::View<Real_t*> src,
    int dim_x, int dim_y)
 {
    Kokkos::MDRangePolicy<Kokkos::Rank<2>> policy({0, 0}, {dim_x, dim_y});
-   Kokkos::parallel_for("Add2D", policy,
+   Kokkos::parallel_for("Add2D", Kokkos::Experimental::require(policy,  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i, const int j) {
       dest[dst_offset + j * dst_stride_y + i * dst_stride_x] +=
          src[src_offset + j * src_stride_y + i * src_stride_x];

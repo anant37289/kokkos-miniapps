@@ -28,6 +28,22 @@
 #include <math.h>
 #include <vector>
 
+using ExecSpace = Kokkos::DefaultExecutionSpace;
+using RangePolicy = Kokkos::RangePolicy<ExecSpace>;
+using MDRangePolicy = Kokkos::MDRangePolicy<Kokkos::Rank<2>, ExecSpace>;
+using HostMemSpace = Kokkos::HostSpace;
+#ifdef GPU_BACKEND
+  #ifdef KOKKOS_ENABLE_CUDA
+  using HostPinnedSpace = Kokkos::CudaHostPinnedSpace;
+  #endif
+  #ifdef KOKKOS_ENABLE_HIP
+  using HostPinnedSpace = Kokkos::HIPHostPinnedSpace;
+  #endif
+#else
+  using HostPinnedSpace = HostMemSpace;
+#endif
+
+
 //**************************************************
 // Allow flexibility for arithmetic representations
 //**************************************************
@@ -227,6 +243,12 @@ public:
       Kokkos::resize(m_delv_eta,allElem);
       Kokkos::resize(m_delv_zeta,allElem);
     }
+  }
+
+  void Allocatevnewc(Int_t numElem)
+  {
+    if(vnewc.size()!=numElem)
+      Kokkos::resize(vnewc, numElem);
   }
 
   void DeallocateGradients() {
@@ -602,6 +624,7 @@ public:
   Kokkos::View<Real_t*> sigzz;
   Kokkos::View<Real_t*> determ;
 
+  Kokkos::View<Real_t*> vnewc;
 
   Kokkos::View<Real_t*> m_fx; /* forces */
   Kokkos::View<Real_t*> m_fy;
