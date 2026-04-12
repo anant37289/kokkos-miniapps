@@ -102,6 +102,33 @@ return CalcElemVolume( x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7],
 }
 
 /////////////////////////////////////////////////////////////////////
+Domain::Domain(CkMigrateMessage *msg):
+m_e_cut(Real_t(1.0e-7)),
+m_p_cut(Real_t(1.0e-7)),
+m_q_cut(Real_t(1.0e-7)),
+m_v_cut(Real_t(1.0e-10)),
+m_u_cut(Real_t(1.0e-7)),
+m_hgcoef(Real_t(3.0)),
+m_ss4o3(Real_t(4.0)/Real_t(3.0)),
+m_qstop(Real_t(1.0e+12)),
+m_monoq_max_slope(Real_t(1.0)),
+m_monoq_limiter_mult(Real_t(2.0)),
+m_qlc_monoq(Real_t(0.5)),
+m_qqc_monoq(Real_t(2.0)/Real_t(3.0)),
+m_qqc(Real_t(2.0)),
+m_eosvmax(Real_t(1.0e+9)),
+m_eosvmin(Real_t(1.0e-9)),
+m_pmin(Real_t(0.)),
+m_emin(Real_t(-1.0e+15)),
+m_dvovmax(Real_t(0.1)),
+m_refdens(Real_t(1.0)),
+buffer_size(0),
+buffer_offset(0)
+
+{}
+
+
+/////////////////////////////////////////////////////////////////////
 Domain::Domain(Int_t numRanks, Index_t colLoc,
                Index_t rowLoc, Index_t planeLoc,
                Index_t nx, int tp, int nr, int balance, Int_t cost, Int_t flatIndex)
@@ -129,12 +156,8 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
 // set pointers to (potentially) "new'd" arrays to null to
 // simplify deallocation.
 //
-   m_regNumList(0),
 //   m_nodeElemStart(0),
 //   m_nodeElemCornerList(0),
-   //m_regElemSize(0),
-   //m_regElemlist(0)
-   buffer(NULL),
    buffer_size(0),
    buffer_offset(0)
 {
@@ -164,7 +187,7 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
 
    m_numNode = edgeNodes*edgeNodes*edgeNodes ;
 
-   m_regNumList = AllocateHost<Index_t>(numElem()) ;  // material indexset
+   m_regNumList = Kokkos::View<Index_t*, HostMemSpace>("m_regNumList", numElem()) ;  // material indexset
 
    // Elem-centered 
    AllocateElemPersistent(numElem()) ;
@@ -289,22 +312,7 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
 
 ////////////////////////////////////////////////////////////////////////////////
 Domain::~Domain()
-{
-/*   Release(&m_regNumList);
-   Release(&m_nodeElemStart);
-   Release(&m_nodeElemCornerList);
-   Release(&m_regElemSize);
-   for (Index_t i=0 ; i<numReg() ; ++i) {
-     Release(&m_regElemlist[i]);
-   }
-   Release(&m_regElemlist);
-
-#if USE_MPI
-   Release(&commDataSend);
-   Release(&commDataRecv);
-#endif
-*/
-} // End destructor
+{} // End destructor
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -504,7 +512,7 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
    srand(CkMyPe()); // FIXME
    Index_t myRank = this->flatIndex;
    this->numReg() = nr;
-   m_regElemSize = AllocateHost<Index_t>(numReg());
+   m_regElemSize = Kokkos::View<Index_t*, HostMemSpace>("m_regElemSize", numReg());
    auto row_map = Kokkos::View<Index_t*>("regElemlist::row_map",numReg()+1);
    auto h_row_map = Kokkos::create_mirror_view(row_map);
    auto entries = Kokkos::View<Index_t*>("regElemlist::entries",numElem());

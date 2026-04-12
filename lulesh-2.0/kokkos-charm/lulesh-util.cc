@@ -154,6 +154,17 @@ void ParseCommandLineOptions(int argc, char *argv[],
             }
             i+=2;
          }
+         /*-l*/
+         else if (strcmp(argv[i], "-l") == 0) {
+            if (i+1 >= argc) {
+               ParseError("Missing integer argument to -l\n", myRank);
+            }
+            ok = StrToInt(argv[i+1], &(opts->lb_every));
+            if (!ok) {
+               ParseError("Parse Error on option -l integer value required after argument\n", myRank);
+            }
+            i+=2;
+         }
          /* -v */
          else if (strcmp(argv[i], "-v") == 0) {
 #if VIZ_MESH            

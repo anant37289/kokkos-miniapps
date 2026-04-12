@@ -62,11 +62,11 @@ class DomainChare : public CBase_DomainChare {
   DomainChare_SDAG_CODE
 
 public:
-  DomainChare(CkMigrateMessage *msg) : CBase_DomainChare(msg) {}
+  DomainChare(CkMigrateMessage *msg);
 
   DomainChare(int numRanks, Index_t nx_, int nr_,
               int balance_, int cost_, int showProg_, int quiet_,
-              int its_, int viz_, int do_atomic_, 
+              int its_, int viz_, int do_atomic_, int lb_every,
               int numChares_);
 
   ~DomainChare() { delete locDom; }
@@ -109,6 +109,36 @@ public:
 
   void processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf);
 
+  void ResumeFromSync()
+  {
+    thisProxy[thisIndex].run();
+  }
+
+  void pup(PUP::er &p)
+  {
+    p| locDom;
+
+    p| iter;
+    p| flatIndex;
+    p| commNbrs;
+    p| remoteCount;
+    p| numChares;
+    p| recvRef;
+    p| opts;
+    p| startTime;
+    p| posVelSendsDone;
+    p| monoQSendsDone;
+    p| sbnSendsDone;
+
+    p| commDataSendPosVel;
+    p| commDataSendMonoQ;
+    p| commDataSendSBN;
+
+    p| commDataRecvPosVel;
+    p| commDataRecvMonoQ;
+    p| commDataRecvSBN;
+  }
+
 
   Domain *locDom;
   uint32_t iter;
@@ -130,11 +160,6 @@ public:
   CommDataMap_t commDataRecvPosVel;
   CommDataMap_t commDataRecvMonoQ;
   CommDataMap_t commDataRecvSBN;
-
-  // Buffer for deferred PosVel processing (deterministic ordering)
-  std::vector<std::tuple<int,int,int>> posVelRecvBuffer;
-  // Buffer for deferred SBN force processing (deterministic ordering)
-  std::vector<std::tuple<int,int,int>> forceRecvBuffer;
 
   hapiStream_t commStream, computeStream;
   ExecSpace commSpace, computeSpace;

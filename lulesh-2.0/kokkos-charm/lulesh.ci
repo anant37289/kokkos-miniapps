@@ -8,6 +8,9 @@ mainmodule lulesh {
 
     message PackingDoneMsg;
 
+    PUPable Domain;
+
+
     mainchare Main {
         entry Main(CkArgMsg* m);
 
@@ -46,7 +49,7 @@ mainmodule lulesh {
     array [3D] DomainChare {
         entry DomainChare(int numRanks, Index_t nx_, int nr_,
             int balance_, int cost_, int showProg_, int quiet_,
-            int its_, int viz_, int do_atomic_, 
+            int its_, int viz_, int do_atomic_, int lb_every,
             int numChares_);
 
         entry [reductiontarget] void initDone();
@@ -128,6 +131,11 @@ mainmodule lulesh {
 
         entry void run() {
             serial "TimeStepCalculation" {
+                if(flatIndex==0)
+                {
+                    printf("running cycle %d\n", locDom->cycle());
+                    fflush(stdout);
+                }
                 if (locDom->cycle() == 0) {
                     startTime = CkWallTimer();
                 }
@@ -195,13 +203,6 @@ mainmodule lulesh {
                 CalcPositionForNodes(domain, delt, domain.numNode(), computeSpace);
 
                 //TODO:: check if a fence is needed here
-                /*
-                computeStream == commStream — they're the same CUDA stream (line 2040). The flow is:
-                CalcPositionForNodes launches kernels on computeSpace (= the shared stream) → writes m_x/y/z
-                SDAG yields → waits for SBNSendDone()
-                CommSend PosVel packs m_x/y/z/xd/yd/zd on commSpace (= the same stream)
-                Since both computeSpace and commSpace are the same CUDA stream, all kernels are serialized by CUDA stream ordering. The packing kernels in CommSend are guaranteed to execute after CalcPositionForNodes finishes — no fence required
-                */
             }
 
             when SBNSendDone() {
@@ -307,7 +308,10 @@ mainmodule lulesh {
                 serial {
                     // run next iteration
                     if ((locDom->time() < locDom->stoptime()) && (locDom->cycle() < opts.its)) {
-                        thisProxy[thisIndex].run();
+                        if((locDom->cycle()+1)%opts.lb_every==0)
+                            AtSync();
+                        else
+                            thisProxy[thisIndex].run();
                     } else {
                         if (thisIndex.x == 0 && thisIndex.y == 0 && thisIndex.z == 0) {
                             Real_t elapsed_time = CkWallTimer() - startTime;

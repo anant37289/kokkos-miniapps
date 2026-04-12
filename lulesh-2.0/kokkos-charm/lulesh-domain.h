@@ -11,6 +11,8 @@
 #include <math.h>
 #include <vector>
 #include <unordered_map>
+#include "pup.h"
+#include "lulesh.h"
 
 using ExecSpace = Kokkos::DefaultExecutionSpace;
 using RangePolicy = Kokkos::RangePolicy<ExecSpace>;
@@ -110,6 +112,90 @@ KOKKOS_INLINE_FUNCTION real10 FABS(real10 arg) { return fabsl(arg); }
 #define CACHE_ALIGN_REAL(n)                                                    \
   (((n) + (CACHE_COHERENCE_PAD_REAL - 1)) & ~(CACHE_COHERENCE_PAD_REAL - 1))
 
+
+
+/*********************************/
+/* Data structure implementation */
+/*********************************/
+
+/* might want to add access methods so that memory can be */
+/* better managed, as in luleshFT */
+
+template <typename T> T *Allocate(size_t size) {
+  return static_cast<T *>(Kokkos::kokkos_malloc<Kokkos::DefaultExecutionSpace::memory_space>(sizeof(T) * size));
+}
+
+template <typename T> T *AllocateHost(size_t size) {
+  return static_cast<T *>(Kokkos::kokkos_malloc<Kokkos::HostSpace>(sizeof(T) * size + 8));
+}
+
+template <typename T> void Release(T **ptr) {
+  if (*ptr != NULL) {
+    Kokkos::kokkos_free<Kokkos::DefaultExecutionSpace::memory_space>(*ptr);
+    *ptr = NULL;
+  }
+}
+
+template <typename T> void ReleaseHost(T **ptr) {
+  if (*ptr != NULL) {
+    Kokkos::kokkos_free<Kokkos::HostSpace>(*ptr);
+    *ptr = NULL;
+  }
+}
+
+struct MinFinder {
+  Real_t val;
+  int i;
+  KOKKOS_INLINE_FUNCTION
+
+  MinFinder() : val(100000000000000000000.0000), i(-1) {}
+
+  KOKKOS_INLINE_FUNCTION
+  MinFinder(const double &val_, const int &i_) : val(val_), i(i_) {}
+
+  KOKKOS_INLINE_FUNCTION
+  MinFinder(const MinFinder &src) : val(src.val), i(src.i) {}
+
+  // overloading += operator to do the max assignment
+  KOKKOS_INLINE_FUNCTION
+  void operator+=(MinFinder &src) {
+    if (src.val < val) {
+      val = src.val;
+      i = src.i;
+    }
+  }
+  KOKKOS_INLINE_FUNCTION
+  void operator+=(const volatile MinFinder &src) volatile {
+    if (src.val < val) {
+      val = src.val;
+      i = src.i;
+    }
+  }
+};
+
+struct reduce_double3 {
+  double x, y, z;
+  KOKKOS_INLINE_FUNCTION
+  reduce_double3() {
+    x = 0.0;
+    y = 0.0;
+    z = 0.0;
+  }
+  KOKKOS_INLINE_FUNCTION
+  void operator+=(const volatile reduce_double3 &src) volatile {
+    x += src.x;
+    y += src.y;
+    z += src.z;
+  }
+  KOKKOS_INLINE_FUNCTION
+  void operator+=(const reduce_double3 &src) {
+    x += src.x;
+    y += src.y;
+    z += src.z;
+  }
+};
+
+
 //////////////////////////////////////////////////////
 // Primary data structure
 //////////////////////////////////////////////////////
@@ -133,44 +219,31 @@ KOKKOS_INLINE_FUNCTION real10 FABS(real10 arg) { return fabsl(arg); }
  *  "Real_t &z(Index_t idx) { return m_coord[idx].z ; }"
  */
 
-class Domain {
+class Domain: public PUP::able{
 
 public:
   // Constructor
+  PUPable_decl(Domain);
   Domain(Int_t numRanks, Index_t colLoc, Index_t rowLoc, Index_t planeLoc,
          Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost, Int_t flatIndex);
+  Domain(CkMigrateMessage *msg);
 
   // Destructor
-  KOKKOS_FUNCTION ~Domain();
+  ~Domain();
 
   //
   // ALLOCATION
   //
 
 
-  Real_t* buffer;
+  Kokkos::View<Real_t*> buffer;
   size_t buffer_size;
   size_t buffer_offset;
 
    void ResizeBuffer(const size_t size);
-   //  {
-   // buffer_offset = 0;
-   // if(size/sizeof(Real_t)+1 > buffer_size) {
-   //    buffer_size = size/sizeof(Real_t)+1;
-   //    Release<Real_t>(&buffer);
-   //    buffer = Allocate<Real_t>(buffer_size);
-   // }
-   // }
 
    template<class Type>
    Type* AllocateFromBuffer(const Index_t& count); 
-   
-   // {
-   // const Index_t offset = (count*sizeof(Type)+sizeof(Real_t)-1)/sizeof(Real_t);
-   // Real_t* ptr = buffer + buffer_offset;
-   // buffer_offset += ((offset+511)/512)*512;
-   // return static_cast<Type*>(ptr);
-   // }
 
 
 
@@ -392,7 +465,7 @@ public:
   //
   Index_t &regElemSize(Index_t idx) { return m_regElemSize[idx]; }
   Index_t &regNumList(Index_t idx) { return m_regNumList[idx]; }
-  Index_t *regNumList() { return &m_regNumList[0]; }
+  Index_t *regNumList() { return m_regNumList.data(); }
   Index_t *regElemlist(Int_t r) const { return &m_regElemlist.entries(m_regElemlist.row_map(r)); }
   KOKKOS_INLINE_FUNCTION Index_t regElemlist(const Int_t r, Index_t idx) const {
     return m_regElemlist.entries(m_regElemlist.row_map(r)+idx);
@@ -610,6 +683,156 @@ public:
   void SetupElementConnectivities(Int_t edgeElems);
   void SetupBoundaryConditions(Int_t edgeElems);
 
+  void pup(PUP::er &p)
+  {
+
+    p| buffer_size;
+    if(p.isUnpacking())
+    {
+      buffer = Kokkos::View<Real_t*>("buffer", buffer_size);
+    }
+
+    p| m_dtcourant;
+    p| m_dthydro;
+    p| m_cycle;
+    p| m_dtfixed;
+    p| m_time;
+    p| m_deltatime;
+    p| m_deltatimemultlb;
+    p| m_deltatimemultub;
+    p| m_dtmax;
+    p| m_stoptime;
+
+    p| m_numRanks;
+    
+    p| m_colLoc;
+    p| m_rowLoc;
+    p| m_planeLoc;
+    p| m_tp;
+
+    p| m_sizeX;
+    p| m_sizeY;
+    p| m_sizeZ;
+    p| m_numElem;
+    p| m_numNode;
+
+    //////////////////////
+    p| m_numReg;
+    p| m_cost;
+    
+    /* recalculated in SetupCommBuffers
+    Index_t m_rowMin, m_rowMax;
+    Index_t m_colMin, m_colMax;
+    Index_t m_planeMin, m_planeMax;
+    
+    Index_t m_maxPlaneSize;
+    Index_t m_maxEdgeSize;
+    */
+    p| flatIndex;
+
+    //NOTE: the sizer is 0 for p.isPackign need to use p.isUnpacking
+    if(!p.isUnpacking())
+      m_nodeElemCornerListSize = m_nodeElemCornerList.size();
+    p| m_nodeElemCornerListSize;
+
+    row_map = Kokkos::View<Index_t*>("regElemlist::row_map",numReg()+1);
+    if(p.isPacking())
+      Kokkos::deep_copy(row_map, m_regElemlist.row_map);
+    entries = Kokkos::View<Index_t*>("regElemlist::entries",numElem());
+    if(p.isPacking())
+      Kokkos::deep_copy(entries, m_regElemlist.entries);
+    Kokkos::fence();
+
+    p(row_map.data(), numReg()+1, PUP::PUPMode::DEVICE);
+    p(entries.data(), numElem(), PUP::PUPMode::DEVICE);
+
+    if(p.isUnpacking())
+    {
+      m_regElemSize = Kokkos::View<Index_t*, HostMemSpace> ("m_regElemSize", numReg());
+      m_regNumList = Kokkos::View<Index_t*, HostMemSpace> ("m_regNumList", numElem());
+      m_regElemlist = t_regElemlist(entries, row_map);
+    }
+
+    p(m_regElemSize.data(), numReg());
+    p(m_regNumList.data(), numElem());
+
+    if(p.isUnpacking())
+    {
+      AllocateNodePersistent(numNode());
+      AllocateElemPersistent(numElem());
+      AllocateCalcVolumeForceBuffer(numElem());
+      //NOTE: Higly dependent on the current cubic decomposition
+      SetupCommBuffers(m_sizeX+1);
+      AllocateVnewc(numElem());
+      AllocateStrains(numElem());
+      //AllocateGradients done when allElem available during execution
+      m_nodeElemStart = Kokkos::View<Index_t*>("m_nodeElemStart",numNode()+1) ;
+      m_nodeElemCornerList = Kokkos::View<Index_t*>("nodeElemCornerList",m_nodeElemCornerListSize);
+    }
+
+    p(m_x.data(), numNode(), PUP::PUPMode::DEVICE);
+    p(m_y.data(), numNode(), PUP::PUPMode::DEVICE);
+    p(m_z.data(), numNode(), PUP::PUPMode::DEVICE);
+
+    p(m_xd.data(), numNode(), PUP::PUPMode::DEVICE);
+    p(m_yd.data(), numNode(), PUP::PUPMode::DEVICE);
+    p(m_zd.data(), numNode(), PUP::PUPMode::DEVICE);
+
+    p(m_xdd.data(), numNode(), PUP::PUPMode::DEVICE);
+    p(m_ydd.data(), numNode(), PUP::PUPMode::DEVICE);
+    p(m_zdd.data(), numNode(), PUP::PUPMode::DEVICE);
+
+    p(m_fx.data(), numNode(), PUP::PUPMode::DEVICE);
+    p(m_fy.data(), numNode(), PUP::PUPMode::DEVICE);
+    p(m_fz.data(), numNode(), PUP::PUPMode::DEVICE);
+
+    p(m_nodalMass.data(),numNode(), PUP::PUPMode::DEVICE);
+
+    p(m_nodelist.data(),numElem()*8, PUP::PUPMode::DEVICE);;
+
+    p(m_lxim.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_lxip.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_letam.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_letap.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_lzetam.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_lzetap.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_elemBC.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_e.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_p.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_q.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_ql.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_qq.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_v.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_volo.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_delv.data(),numElem(), PUP::PUPMode::DEVICE);
+    p(m_vdov.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_arealg.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_ss.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_elemMass.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    p(m_vnew.data(),numElem(), PUP::PUPMode::DEVICE);
+
+    //sigxx, sigyy,sigzz,determ scratch buffers
+
+    if(m_symmX.size()!=0)
+      p(m_symmX.data(), m_symmX.size(), PUP::PUPMode::DEVICE);
+    if(m_symmY.size()!=0)
+      p(m_symmY.data(), m_symmY.size(), PUP::PUPMode::DEVICE);
+    if(m_symmZ.size()!=0)
+      p(m_symmZ.data(), m_symmZ.size(), PUP::PUPMode::DEVICE);
+
+    p(m_nodeElemStart.data(), numNode()+1, PUP::PUPMode::DEVICE);
+    p(m_nodeElemCornerList.data(), m_nodeElemCornerListSize, PUP::PUPMode::DEVICE);
+  }
+
   //
   // IMPLEMENTATION
   //
@@ -661,8 +884,8 @@ public:
   // Region information
   Int_t m_numReg;
   Int_t m_cost;            // imbalance cost
-  Index_t *m_regElemSize;  // Size of region sets
-  Index_t *m_regNumList;   // Region number per domain element
+  Kokkos::View<Index_t*, HostMemSpace> m_regElemSize;  // Size of region sets
+  Kokkos::View<Index_t*, HostMemSpace> m_regNumList;   // Region number per domain element
   //Index_t **m_regElemlist; // region indexset
   using t_regElemlist = Kokkos::StaticCrsGraph<Index_t,Kokkos::LayoutLeft,Kokkos::DefaultExecutionSpace,Kokkos::MemoryTraits<0>,Index_t>;
   t_regElemlist m_regElemlist;
@@ -785,6 +1008,11 @@ public:
   Index_t m_planeMin, m_planeMax;
 
   Index_t flatIndex;
+
+  //Used in migration of m_regElemlist
+  Kokkos::View<Index_t*> row_map;
+  Kokkos::View<Index_t*> entries;
+  size_t m_nodeElemCornerListSize;
 };
 typedef Real_t &(Domain::*Domain_member)(Index_t) const;
 
@@ -845,6 +1073,21 @@ public:
   int dst_stride[2];
   int size[2];
   int pmsg, emsg, cmsg;
+
+  void pup(PUP::er &p)
+  {
+    p| offset;
+    p| src_stride[0];
+    p| src_stride[1];
+    p| dst_stride[0];
+    p| dst_stride[1];
+    p| size[0];
+    p| size[1];
+    p| pmsg;
+    p| emsg;
+    p| cmsg;
+
+  }
 };
 
 struct cmdLineOpts {
@@ -859,6 +1102,23 @@ struct cmdLineOpts {
   Int_t balance;   // -b
   Int_t do_atomic; // -a
   Int_t numChares;    // -n
+  Int_t lb_every; // -l
+
+  void pup(PUP::er &p)
+  {
+    p| its;
+    p| nx;
+    p| numReg;
+    p| numFiles;
+    p| showProg;
+    p| quiet;
+    p| viz;
+    p| cost;
+    p| balance;
+    p| do_atomic;
+    p| numChares;
+    p| lb_every;
+  }
 };
 
 // Function Prototypes
@@ -880,86 +1140,5 @@ void DumpToVisit(Domain &domain, int numFiles, int myRank, int numRanks);
 // lulesh-init
 void InitMeshDecomp(Int_t numRanks, Int_t myRank, Int_t *col, Int_t *row,
                     Int_t *plane, Int_t *side);
-
-/*********************************/
-/* Data structure implementation */
-/*********************************/
-
-/* might want to add access methods so that memory can be */
-/* better managed, as in luleshFT */
-
-template <typename T> T *Allocate(size_t size) {
-  return static_cast<T *>(Kokkos::kokkos_malloc<Kokkos::DefaultExecutionSpace::memory_space>(sizeof(T) * size));
-}
-
-template <typename T> T *AllocateHost(size_t size) {
-  return static_cast<T *>(Kokkos::kokkos_malloc<Kokkos::HostSpace>(sizeof(T) * size + 8));
-}
-
-template <typename T> void Release(T **ptr) {
-  if (*ptr != NULL) {
-    Kokkos::kokkos_free<Kokkos::DefaultExecutionSpace::memory_space>(*ptr);
-    *ptr = NULL;
-  }
-}
-
-template <typename T> void ReleaseHost(T **ptr) {
-  if (*ptr != NULL) {
-    Kokkos::kokkos_free<Kokkos::HostSpace>(*ptr);
-    *ptr = NULL;
-  }
-}
-
-struct MinFinder {
-  Real_t val;
-  int i;
-  KOKKOS_INLINE_FUNCTION
-
-  MinFinder() : val(100000000000000000000.0000), i(-1) {}
-
-  KOKKOS_INLINE_FUNCTION
-  MinFinder(const double &val_, const int &i_) : val(val_), i(i_) {}
-
-  KOKKOS_INLINE_FUNCTION
-  MinFinder(const MinFinder &src) : val(src.val), i(src.i) {}
-
-  // overloading += operator to do the max assignment
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(MinFinder &src) {
-    if (src.val < val) {
-      val = src.val;
-      i = src.i;
-    }
-  }
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile MinFinder &src) volatile {
-    if (src.val < val) {
-      val = src.val;
-      i = src.i;
-    }
-  }
-};
-
-struct reduce_double3 {
-  double x, y, z;
-  KOKKOS_INLINE_FUNCTION
-  reduce_double3() {
-    x = 0.0;
-    y = 0.0;
-    z = 0.0;
-  }
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(const volatile reduce_double3 &src) volatile {
-    x += src.x;
-    y += src.y;
-    z += src.z;
-  }
-  KOKKOS_INLINE_FUNCTION
-  void operator+=(const reduce_double3 &src) {
-    x += src.x;
-    y += src.y;
-    z += src.z;
-  }
-};
 
 #endif // LULESH_DOMAIN_H

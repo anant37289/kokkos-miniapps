@@ -23,8 +23,7 @@ void Domain::ResizeBuffer(const size_t size)
    buffer_offset = 0;
    if(size/sizeof(Real_t)+1 > buffer_size) {
       buffer_size = size/sizeof(Real_t)+1;
-      Release<Real_t>(&buffer);
-      buffer = Allocate<Real_t>(buffer_size);
+      buffer = Kokkos::View<Real_t*>("buffer", buffer_size);
    }
    }
 
@@ -32,7 +31,7 @@ void Domain::ResizeBuffer(const size_t size)
   Type* Domain::AllocateFromBuffer(const Index_t& count) 
   {
   const Index_t offset = (count*sizeof(Type)+sizeof(Real_t)-1)/sizeof(Real_t);
-  Real_t* ptr = buffer + buffer_offset;
+  Real_t* ptr = buffer.data() + buffer_offset;
   buffer_offset += ((offset+511)/512)*512;
   return static_cast<Type*>(ptr);
   }
@@ -723,7 +722,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
     if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
     //
-     Kokkos::parallel_for ("CalcFBHourglassForceForElems B", Kokkos::Experimental::require(Kokkos::TeamPolicy<ExecSpace>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+     CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for ("CalcFBHourglassForceForElems B", Kokkos::Experimental::require(Kokkos::TeamPolicy<ExecSpace>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
      {
        const Index_t gnode_begin = team.league_rank()*128;
@@ -745,7 +744,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
            domain.fz(gnode) += f_tmp.z ;
          });
        });
-     });
+     });)
   }
 
   // std::ostringstream os;
@@ -814,12 +813,7 @@ static inline void CalcVolumeForceForElems(Domain &domain, ExecSpace execSpace) 
   if (numElem != 0) {
     Real_t hgcoef = domain.hgcoef();
     Index_t numElem8 = numElem * 8;
-
-    // Single ResizeBuffer for the entire call chain:
-    //  - sigxx/sigyy/sigzz/determ are now class views (not from buffer)
-    //  - scratch (cumulative, no reclaim): 3 (IntegrateStress) + 6 (CalcHourglass) + 3 (CalcFBHourglass if !atomic)
-    // domain.ResizeBuffer((numElem8 * sizeof(Real_t) + 4096) * (do_atomic ? 9 : 12));
-
+    
     domain.AllocateCalcVolumeForceBuffer(numElem);
 
     Real_t *sigxx  = domain.sigxx.data();
@@ -1649,7 +1643,7 @@ CalcEnergyForElems(Real_t *p_new, Real_t *e_new, Real_t *q_new, Real_t *bvc,
                    Real_t e_cut, Real_t q_cut, Real_t emin, Real_t *qq_old,
                    Real_t *ql_old, Real_t rho0, Real_t eosvmax, Index_t length,
                    Domain& domain, Index_t r, ExecSpace execSpace) {
-  Kokkos::parallel_for ("CalcEnergyForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), KOKKOS_LAMBDA (const int i){
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for ("CalcEnergyForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), KOKKOS_LAMBDA (const int i){
      const Real_t delvc_i = delvc[i];
      const Real_t p_old_i = p_old[i];
      const Real_t q_old_i = q_old[i];
@@ -1757,7 +1751,7 @@ CalcEnergyForElems(Real_t *p_new, Real_t *e_new, Real_t *q_new, Real_t *bvc,
      }
      q_new[i] = q_new_i;
      e_new[i] = e_new_i;
-  });
+  });)
 
   return;
 }
@@ -1816,7 +1810,7 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
   // if(domain.flatIndex==0)
   //   printf("calling EvalEOSForElems for %d rep\n", rep);
   for (Int_t j = 0; j < rep; j++) {
-    Kokkos::parallel_for("EvalEOSForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElemReg),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("EvalEOSForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElemReg),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i) {
       Index_t ielem = domain.regElemlist(r,i);
       e_old[i] = domain.c_e(ielem);
@@ -1844,7 +1838,7 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
         }
       }
       work[i] = Real_t(0.);
-    });
+    });)
 
     CalcEnergyForElems(p_new, e_new, q_new, bvc, pbvc, p_old, e_old, q_old,
                        compression, compHalfStep, vnewc, work, delvc, pmin, p_cut,
@@ -2081,6 +2075,7 @@ Main::Main(CkArgMsg* m) {
   opts.cost = 1;
   opts.do_atomic = 0;
   opts.numChares = 1;
+  opts.lb_every = 50;
 
   ParseCommandLineOptions(m->argc, m->argv, myRank, &opts);
 
@@ -2112,14 +2107,14 @@ Main::Main(CkArgMsg* m) {
   domainProxy = CProxy_DomainChare::ckNew(numRanks, opts.nx, opts.numReg,
                                           opts.balance, opts.cost,
                                           opts.showProg, opts.quiet,
-                                          opts.its, opts.viz, opts.do_atomic,
+                                          opts.its, opts.viz, opts.do_atomic, opts.lb_every,
                                           numChares, numChares, numChares, numChares);
 }
 
 DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
                   int balance_, int cost_, int showProg_, int quiet_,
-                  int its_, int viz_, int do_atomic_, 
-                  int numChares_) {
+                  int its_, int viz_, int do_atomic_, int lb_every ,int numChares_) {
+  usesAtSync=true;
   numChares = numChares_;
 
   iter = 0;
@@ -2136,6 +2131,7 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
   opts.balance = balance_;
   opts.cost = cost_;
   opts.do_atomic = do_atomic_;
+  opts.lb_every = lb_every;
 
   //TODO: change
   // hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, -1));
@@ -2152,6 +2148,15 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
   locDom = new Domain(numRanks, col, row, plane, nx_, side, nr_, balance_, cost_, flatIndex);
 
   thisProxy[thisIndex].init(numRanks, nx_, nr_, balance_, cost_, numChares_);
+}
+
+DomainChare::DomainChare(CkMigrateMessage *msg)
+{
+  usesAtSync=true;
+  hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamNonBlocking, 0));
+  computeStream = commStream;
+  commSpace = ExecSpace(commStream);
+  computeSpace = commSpace;
 }
 
 void KokkosManager::finalize() {
