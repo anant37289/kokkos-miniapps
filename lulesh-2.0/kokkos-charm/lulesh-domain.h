@@ -858,7 +858,7 @@ struct cmdLineOpts {
   Int_t cost;      // -c
   Int_t balance;   // -b
   Int_t do_atomic; // -a
-  Int_t odf;    // -o
+  Int_t numChares;    // -n
 };
 
 // Function Prototypes

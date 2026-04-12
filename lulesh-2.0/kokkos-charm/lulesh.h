@@ -53,7 +53,6 @@ public:
   }
 
   ~KokkosManager() {
-    Kokkos::finalize();
   }
 
   void finalize();

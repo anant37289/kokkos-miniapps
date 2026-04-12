@@ -313,7 +313,8 @@ mainmodule lulesh {
                             Real_t elapsed_time = CkWallTimer() - startTime;
                             VerifyAndWriteFinalOutput(elapsed_time, *locDom, locDom->sizeX(), locDom->numRanks());
                         }
-                        delete locDom;
+                        // delete locDom;
+                        // locDom = nullptr;
                         CkCallback cb(CkReductionTarget(Main, done), mainProxy);
                         contribute(cb);
                     }

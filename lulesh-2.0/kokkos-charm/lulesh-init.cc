@@ -142,6 +142,7 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
    Index_t edgeElems = nx ;
    Index_t edgeNodes = edgeElems+1 ;
    this->cost() = cost;
+   this->flatIndex = flatIndex;
 
    m_tp       = tp ;
    m_numRanks = numRanks ;
@@ -263,9 +264,7 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
          h_nodalMass(idx) += volume / Real_t(8.0) ;
       }
    }
-   this->flatIndex = flatIndex;
 
-    printf("\n");
 
    Kokkos::deep_copy(m_volo, h_volo);
    Kokkos::deep_copy(m_elemMass, h_elemMass);
@@ -608,7 +607,6 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
    }
    Kokkos::deep_copy(m_regElemlist.entries,h_regElemlist.entries);
    Kokkos::deep_copy(row_map,h_row_map);
-   printf("BuildList\n");
 }
 
 /////////////////////////////////////////////////////////////

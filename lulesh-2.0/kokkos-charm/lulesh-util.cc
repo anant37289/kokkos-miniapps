@@ -144,11 +144,11 @@ void ParseCommandLineOptions(int argc, char *argv[],
             }
             i+=2;
          }
-         else if (strcmp(argv[i], "-o") == 0) {
+         else if (strcmp(argv[i], "-n") == 0) {
             if (i+1 >= argc) {
-               ParseError("Missing integer argument to -o\n", myRank);
+               ParseError("Missing integer argument to -n\n", myRank);
             }
-            ok = StrToInt(argv[i+1], &(opts->odf));
+            ok = StrToInt(argv[i+1], &(opts->numChares));
             if (!ok) {
                ParseError("Parse Error on option -o integer value required after argument\n", myRank);
             }

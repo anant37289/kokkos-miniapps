@@ -87,11 +87,11 @@ void PrintState(Domain& locDom, int myRank) {
 }
 
 Real_t DomainChare::TimeStepCalculateLocal(Domain &domain) {
+  Real_t gnewdt = Real_t(1.0e+20);
   if ((domain.dtfixed() <= Real_t(0.0)) && (domain.cycle() != Int_t(0))) {
     Real_t ratio;
     Real_t olddt = domain.deltatime();
 
-    Real_t gnewdt = Real_t(1.0e+20);
     Real_t newdt;
     if (domain.dtcourant() < gnewdt) {
       gnewdt = domain.dtcourant() / Real_t(2.0);
@@ -99,9 +99,9 @@ Real_t DomainChare::TimeStepCalculateLocal(Domain &domain) {
     if (domain.dthydro() < gnewdt) {
       gnewdt = domain.dthydro() * Real_t(2.0) / Real_t(3.0);
     }
-
-    return gnewdt;
   }
+
+  return gnewdt;
 }
 
 void DomainChare::TimeIncrement(Real_t newdt) {
@@ -1874,8 +1874,7 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
 
     auto vnewc = domain.vnewc;
 
-    Kokkos::parallel_for(
-        "ApplyMaterialPropertiesForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    Kokkos::parallel_for("ApplyMaterialPropertiesForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA(const int i) { vnewc[i] = domain.vnew(i); });
 
     if (eosvmin != Real_t(0.)) {
@@ -2081,11 +2080,11 @@ Main::Main(CkArgMsg* m) {
   opts.balance = 1;
   opts.cost = 1;
   opts.do_atomic = 0;
-  opts.odf = 1;
+  opts.numChares = 1;
 
   ParseCommandLineOptions(m->argc, m->argv, myRank, &opts);
 
-  numRanks = CkNumPes() * opts.odf;
+  numRanks = opts.numChares;
   int numChares = cbrt(numRanks);
   if (numChares * numChares * numChares < numRanks) {
     CkAbort("Number of chares must be a perfect cube\n");

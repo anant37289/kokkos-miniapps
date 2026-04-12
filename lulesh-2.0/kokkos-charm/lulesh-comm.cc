@@ -76,7 +76,7 @@ void Add1D(Kokkos::View<Real_t*> &src, int src_offset, int src_stride,
    Kokkos::View<Real_t*> &dest, int dst_offset, int dst_stride,
    int size, ExecSpace execSpace)
 {
-   Kokkos::parallel_for("Add1D", RangePolicy(execSpace, 0, size),
+   Kokkos::parallel_for("Add1D", Kokkos::Experimental::require(RangePolicy(execSpace, 0, size), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
       dest[dst_offset + i * dst_stride] += src[src_offset + i * src_stride];
    });
@@ -111,7 +111,7 @@ void Add2D(Kokkos::View<Real_t*> &src,
    int dim_x, int dim_y, ExecSpace execSpace)
 {
    Kokkos::MDRangePolicy<Kokkos::Rank<2>> policy(execSpace, {0, 0}, {dim_x, dim_y});
-   Kokkos::parallel_for("Add2D", policy,
+   Kokkos::parallel_for("Add2D", Kokkos::Experimental::require(policy, Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i, const int j) {
       dest[dst_offset + j * dst_stride_y + i * dst_stride_x] += 
          src[src_offset + j * src_stride_y + i * src_stride_x];
@@ -602,19 +602,40 @@ void DomainChare::CommSend(Domain& domain, int msgType,
 
       // commSpace.fence();
 
-      CkCallback* cb = new CkCallback(CkIndex_DomainChare::packingDone(NULL), thisProxy[thisIndex]);
+      // CkCallback* cb = new CkCallback(CkIndex_DomainChare::packingDone(NULL), thisProxy[thisIndex]);
       int sendCount = xferFields * cdata.size[0] * cdata.size[1];
       PackingDoneMsg* msg = new PackingDoneMsg(msgType,
          iter,
          std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
          xferFields, sendCount, offset);
       
+      uint32_t ref = MAKE_REF(msg->msgType, msg->sendIter);
+      CkCallback* cb;
+      CkArrayIndex3D myIndex = CkArrayIndex3D(thisIndex);
+
+      if (msg->msgType == MSG_SYNC_POS_VEL) {
+         cb = new CkCallback(CkIndex_DomainChare::PosVelSendCallback(), myIndex, thisArrayID);
+      }
+      else if (msg->msgType == MSG_MONOQ) {
+         cb = new CkCallback(CkIndex_DomainChare::MonoQSendCallback(), myIndex, thisArrayID);
+      }
+      else if (msg->msgType == MSG_COMM_SBN) {
+         cb = new CkCallback(CkIndex_DomainChare::SBNSendCallback(), myIndex, thisArrayID);
+      }
+      else
+         CkAbort("DomainChare::packingDone: Unknown msgType") ;
+
+      Real_t* sendPtr = locDom->commDataSendView.data() + msg->offset;
+
+      thisProxy(msg->x, msg->y, msg->z).CommRecv(ref, thisIndex.x, thisIndex.y, thisIndex.z, 
+      msg->xferFields, msg->sendCount, CkDeviceBuffer(sendPtr, *cb, commStream));
+      
       DBG_PRINTF("[DEBUG CommSend packing] (%d,%d,%d)->(%d,%d,%d) iter=%u msgType=0x%x xferFields=%d sendCount=%d offset=%d\n",
          thisIndex.x, thisIndex.y, thisIndex.z,
          std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
          iter, msgType, xferFields, sendCount, offset);
 
-      hapiAddCallback(commStream, cb, msg);
+      // hapiAddCallback(commStream, cb, msg);
    }
 }
 
@@ -803,38 +824,38 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
    }
    #if DEBUG_COMM
    // Diagnostic: check recv data immediately at DMA completion for z-face neighbors
-   // int ox = x - thisIndex.x;
-   // int oy = y - thisIndex.y;
-   // int oz = z - thisIndex.z;
-   // if (oz != 0 && ox == 0 && oy == 0) {
-   //    // z-face: check if data at offset 0 in recvView is correct
-   //    commSpace.fence();
-   //    auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataRecvViewPosVel);
-   //    CommData& cd = commDataRecvPosVel[{x, y, z}];
-   //    int maxPlaneComm = xferFields * locDom->maxPlaneSize();
-   //    int maxEdgeComm = xferFields * locDom->maxEdgeSize();
-   //    int off = cd.pmsg * maxPlaneComm + cd.emsg * maxEdgeComm + cd.cmsg * CACHE_COHERENCE_PAD_REAL;
-   //    int count = cd.size[0] * cd.size[1];
-   //    int nzero = 0;
-   //    for (int k = 0; k < count; ++k) {
-   //       if (h_recv(off + k) == 0.0 || h_recv(off + k) == -0.0) nzero++;
-   //    }
-   //    if (nzero > count * 9 / 10) {
-   //       printf("[DMA-LAND ZERO chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
-   //          thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
-   //       for (int fi = 0; fi < 6 && fi < xferFields; ++fi) {
-   //          printf("  fi=%d last5:", fi);
-   //          int base = off + fi * count;
-   //          for (int k = count - 5; k < count; ++k) {
-   //             if (k >= 0) printf(" [%d]=%.10e", base + k, h_recv(base + k));
-   //          }
-   //          printf("\n");
-   //       }
-   //    } else {
-   //       printf("[DMA-LAND OK chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
-   //          thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
-   //    }
-   // }
+   int ox = x - thisIndex.x;
+   int oy = y - thisIndex.y;
+   int oz = z - thisIndex.z;
+   if (oz != 0 && ox == 0 && oy == 0) {
+      // z-face: check if data at offset 0 in recvView is correct
+      commSpace.fence();
+      auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataRecvViewPosVel);
+      CommData& cd = commDataRecvPosVel[{x, y, z}];
+      int maxPlaneComm = xferFields * locDom->maxPlaneSize();
+      int maxEdgeComm = xferFields * locDom->maxEdgeSize();
+      int off = cd.pmsg * maxPlaneComm + cd.emsg * maxEdgeComm + cd.cmsg * CACHE_COHERENCE_PAD_REAL;
+      int count = cd.size[0] * cd.size[1];
+      int nzero = 0;
+      for (int k = 0; k < count; ++k) {
+         if (h_recv(off + k) == 0.0 || h_recv(off + k) == -0.0) nzero++;
+      }
+      if (nzero > count * 9 / 10) {
+         printf("[DMA-LAND ZERO chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
+            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
+         for (int fi = 0; fi < 6 && fi < xferFields; ++fi) {
+            printf("  fi=%d last5:", fi);
+            int base = off + fi * count;
+            for (int k = count - 5; k < count; ++k) {
+               if (k >= 0) printf(" [%d]=%.10e", base + k, h_recv(base + k));
+            }
+            printf("\n");
+         }
+      } else {
+         printf("[DMA-LAND OK chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
+            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
+      }
+   }
    #endif
 }
 /******************************************/
@@ -924,7 +945,7 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
                cdata.size[0], commSpace);
       }
    }
-   commSpace.fence();
+   // commSpace.fence();
 }
 
 /******************************************/
