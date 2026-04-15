@@ -23,7 +23,7 @@ mainmodule lulesh {
 
             when done() {
                 serial {
-                    CkPrintf("Total runtime = %f\n", CkWallTimer() - start);
+                    printf("Total runtime = %f\n", CkWallTimer() - start);
                     kokkosProxy.finalize();
                     // CkExit();
                 }
@@ -132,8 +132,10 @@ mainmodule lulesh {
                     startTime = CkWallTimer();
                 }
                 if ((opts.showProg != 0) && (opts.quiet == 0) && (flatIndex == 0)) {
-                    CkPrintf("cycle = %d, time = %e, dt=%e\n", locDom->cycle(),
+                    printf("cycle = %d, time = %e, dt=%e\n", locDom->cycle(),
                              double(locDom->time()), double(locDom->deltatime()));
+                    fflush(stdout);
+
                 }
 
                 Real_t gnewdt = TimeStepCalculateLocal(*locDom);
@@ -254,7 +256,8 @@ mainmodule lulesh {
                     fieldData[1] = domain.m_delv_eta;
                     fieldData[2] = domain.m_delv_zeta;
                     
-                    // CkPrintf("SENDING Q\n");
+                    printf("SENDING Q\n");
+                    fflush(stdout);
                     CommSend(domain, MSG_MONOQ, 3, fieldData, domain.sizeX(), domain.sizeY(),
                             domain.sizeZ(), true, true, commDataSendMonoQ);
 

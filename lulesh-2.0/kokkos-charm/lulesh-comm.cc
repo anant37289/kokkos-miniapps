@@ -856,6 +856,7 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
             thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
       }
    }
+   fflush(stdout);
    #endif
 }
 /******************************************/
