@@ -6,6 +6,14 @@
 #include <cstdlib>
 #include "lulesh.h"
 
+size_t random_size_t() {
+    size_t r = 0;
+    for (int i = 0; i < sizeof(size_t) / sizeof(int); i++) {
+        r = (r << (sizeof(int) * 8)) | rand();
+    }
+    return r;
+}
+
 static KOKKOS_INLINE_FUNCTION
 Real_t CalcElemVolume( const Real_t x0, const Real_t x1,
                const Real_t x2, const Real_t x3,
@@ -184,6 +192,8 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
    m_sizeY = edgeElems ;
    m_sizeZ = edgeElems ;
    m_numElem = edgeElems*edgeElems*edgeElems ;
+
+   printf("[%d] numElem %d\n", flatIndex, m_numElem);
 
    m_numNode = edgeNodes*edgeNodes*edgeNodes ;
 
@@ -509,8 +519,9 @@ Domain::SetupCommBuffers(Int_t edgeNodes)
 void
 Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
 {
-   srand(CkMyPe()); // FIXME
-   Index_t myRank = this->flatIndex;
+   srand(flatIndex);
+   //NOTE: for SMP build node_is~MPI rank and hence this gives similar distribution to MPI?
+   Index_t myRank = CmiMyNode();
    this->numReg() = nr;
    m_regElemSize = Kokkos::View<Index_t*, HostMemSpace>("m_regElemSize", numReg());
    auto row_map = Kokkos::View<Index_t*>("regElemlist::row_map",numReg()+1);
@@ -524,6 +535,8 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
    // Fill out the regNumList with material numbers, which are always
    // the region index plus one 
    if(numReg() == 1) {
+      printf("[%d] here\n", flatIndex);
+      fflush(stdout);
       while (nextIndex < numElem()) {
 	 this->regNumList(nextIndex) = 1;
          nextIndex++;
@@ -532,14 +545,14 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
    }
    //If we have more than one region distribute the elements.
    else {
-      Int_t regionNum;
-      Int_t regionVar;
-      Int_t lastReg = -1;
-      Int_t binSize;
+      size_t regionNum;
+      size_t regionVar;
+      size_t lastReg = -1;
+      size_t binSize;
       Index_t elements;
       Index_t runto = 0;
-      Int_t costDenominator = 0;
-      Kokkos::View<Int_t*,Kokkos::HostSpace> regBinEnd("regBinEnd",numReg());
+      size_t costDenominator = 0;
+      Kokkos::View<size_t*,Kokkos::HostSpace> regBinEnd("regBinEnd",numReg());
       //Determine the relative weights of all the regions.  This is based off the -b flag.  Balance is the value passed into b.  
       for (Index_t i=0 ; i<numReg() ; ++i) {
          regElemSize(i) = 0;
@@ -549,7 +562,7 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
       //Until all elements are assigned
       while (nextIndex < numElem()) {
 	 //pick the region
-	 regionVar = rand() % costDenominator;
+	 regionVar = random_size_t() % costDenominator;
 	 Index_t i = 0;
          while(regionVar >= regBinEnd[i])
 	    i++;
@@ -558,7 +571,7 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
 	 regionNum = ((i + myRank) % numReg()) + 1;
 	 // make sure we don't pick the same region twice in a row
          while(regionNum == lastReg) {
-	    regionVar = rand() % costDenominator;
+	    regionVar = random_size_t() % costDenominator;
 	    i = 0;
             while(regionVar >= regBinEnd[i])
 	       i++;
@@ -603,6 +616,15 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
    }
    // Second, allocate each region index set
    h_row_map(0) = 0;
+
+   printf("[%d]=====Reg Elem Size====\n", flatIndex);
+   for(Index_t i=0 ; i<numReg() ; ++i)
+   {
+    printf("%d ", regElemSize(i));
+   }
+   printf("\n");
+   fflush(stdout);
+
    for (Index_t i=0 ; i<numReg() ; ++i) {
       h_row_map(i+1) = h_row_map(i) + regElemSize(i);
       regElemSize(i) = 0;

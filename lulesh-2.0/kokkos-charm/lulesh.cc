@@ -405,7 +405,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
   int team_size = 1;
   if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
-  Kokkos::parallel_for ("IntegrateStressForElems B", Kokkos::Experimental::require(Kokkos::TeamPolicy<>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for ("IntegrateStressForElems B", Kokkos::Experimental::require(Kokkos::TeamPolicy<>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
      {
        const Index_t gnode_begin = team.league_rank()*128;
@@ -427,7 +427,7 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
            domain.fz(gnode) += f_tmp.z ;
          });
        });
-     });
+     });)
 
   // execSpace.fence();
   //NOT 
@@ -565,7 +565,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   os << "CalcFBHourglassForceForElems A ";
   NVTXTracer(os.str(), NVTXColor::GreenSea);
   os.clear();
-  Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int &i2) {
     Real_t *fx_local, *fy_local, *fz_local;
     Real_t hgfx[8];
@@ -708,7 +708,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
       Kokkos::atomic_add(&domain.fz(n6si2), hgfx[6]);
       Kokkos::atomic_add(&domain.fz(n7si2), hgfx[7]);
     }
-  });
+  });)
   
   // std::ostringstream os; 
   os << "[END] CalcFBHourglassForceForElems A ";
@@ -721,7 +721,6 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
     int team_size = 1;
     if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
 
-    //
      CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for ("CalcFBHourglassForceForElems B", Kokkos::Experimental::require(Kokkos::TeamPolicy<ExecSpace>(execSpace, (numNode+127)/128,team_size,2), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
         KOKKOS_LAMBDA (const typename Kokkos::TeamPolicy<ExecSpace>::member_type& team)
      {
@@ -775,7 +774,7 @@ static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
 
   int error = 0;
   // CalcHourglassControlForElems
-  Kokkos::parallel_reduce(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_reduce(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i, int& err) {
     Real_t x1[8], y1[8], z1[8];
 
@@ -795,7 +794,7 @@ static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
     if (domain.v(i) <= Real_t(0.0)) {
       err++;
     }
-  },error);
+  },error);)
 
   if(error)
    CkAbort("VolumeError1");
@@ -889,7 +888,7 @@ static inline void CalcVelocityForNodes(Domain &domain, const Real_t dt,
                                         const Real_t u_cut, Index_t numNode,
                                         ExecSpace execSpace) {
 
-  Kokkos::parallel_for("CalcVelocityForNodes", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNode),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("CalcVelocityForNodes", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNode),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int i) {
     Real_t xdtmp, ydtmp, zdtmp;
 
@@ -907,17 +906,17 @@ static inline void CalcVelocityForNodes(Domain &domain, const Real_t dt,
     if (FABS(zdtmp) < u_cut)
       zdtmp = Real_t(0.0);
     domain.zd(i) = zdtmp;
-  });
+  });)
 }
 
 static inline void CalcPositionForNodes(Domain &domain, const Real_t dt,
                                         Index_t numNode, ExecSpace execSpace) {
-  Kokkos::parallel_for("CalcPositionForNodes", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNode),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("CalcPositionForNodes", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numNode),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     domain.x(i) += domain.xd(i) * dt;
     domain.y(i) += domain.yd(i) * dt;
     domain.z(i) += domain.zd(i) * dt;
-  });
+  });)
 }
 
 
@@ -1116,7 +1115,7 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
   Kokkos::fence();
   #endif
 
-  Kokkos::parallel_for("CalcKinematicsForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("CalcKinematicsForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int k) {
     Real_t B[3][8];
     Real_t D[6];
@@ -1176,7 +1175,7 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
     domain.dxx(k) = D[0];
     domain.dyy(k) = D[1];
     domain.dzz(k) = D[2];
-  });
+  });)
 
   #if DEBUG_COMM
   if(domain.flatIndex==0)
@@ -1221,7 +1220,7 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
     CalcKinematicsForElems(domain, deltatime, numElem, execSpace);
 
     int error = 0;
-    Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int k, int& err) {
       Real_t vdov = domain.dxx(k) + domain.dyy(k) + domain.dzz(k);
       Real_t vdovthird = vdov / Real_t(3.0);
@@ -1234,7 +1233,7 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
       if (domain.vnew(k) <= Real_t(0.0)) {
         err++;
       }
-    },error);
+    },error);)
 
     if(error)
      CkAbort("VolumeError3");
@@ -1246,7 +1245,7 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
 static inline void CalcMonotonicQGradientsForElems(Domain &domain, ExecSpace execSpace) {
   Index_t numElem = domain.numElem();
 
-  Kokkos::parallel_for("CalcMonotonicQGradientsForElems", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("CalcMonotonicQGradientsForElems", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     const Real_t ptiny = Real_t(1.e-36);
     Real_t ax, ay, az;
@@ -1378,7 +1377,7 @@ static inline void CalcMonotonicQGradientsForElems(Domain &domain, ExecSpace exe
     dzv = Real_t(-0.25) * ((zv0 + zv1 + zv5 + zv4) - (zv3 + zv2 + zv6 + zv7));
 
     domain.delv_eta(i) = ax * dxv + ay * dyv + az * dzv;
-  });
+  });)
 }
 
 static inline void CalcMonotonicQRegionForElems(Domain &domain, Int_t r,
@@ -1388,7 +1387,7 @@ static inline void CalcMonotonicQRegionForElems(Domain &domain, Int_t r,
   Real_t qlc_monoq = domain.qlc_monoq();
   Real_t qqc_monoq = domain.qqc_monoq();
 
-  Kokkos::parallel_for("CalcMonotonicQRegionForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, domain.regElemSize(r)),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("CalcMonotonicQRegionForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, domain.regElemSize(r)),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     Index_t ielem = domain.regElemlist(r, i);
     Real_t qlin, qquad;
@@ -1582,7 +1581,7 @@ static inline void CalcMonotonicQRegionForElems(Domain &domain, Int_t r,
 
     domain.qq(ielem) = qquad;
     domain.ql(ielem) = qlin;
-  });
+  });)
 }
 
 static inline void CalcMonotonicQForElems(Domain &domain, ExecSpace execSpace){
@@ -1761,7 +1760,7 @@ static inline void CalcSoundSpeedForElems(Domain &domain, Real_t *vnewc,
                                           Real_t *pnewc, Real_t *pbvc,
                                           Real_t *bvc, Real_t ss4o3,
                                           Index_t len, Index_t r, ExecSpace execSpace) {
-  Kokkos::parallel_for("CalcSoundSpeedForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, len),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("CalcSoundSpeedForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, len),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int i) {
     Index_t ielem = domain.regElemlist(r,i);
     Real_t ssTmp =
@@ -1773,7 +1772,7 @@ static inline void CalcSoundSpeedForElems(Domain &domain, Real_t *vnewc,
       ssTmp = SQRT(ssTmp);
     }
     domain.ss(ielem) = ssTmp;
-  });
+  });)
 }
 
 static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
@@ -1810,7 +1809,7 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
   // if(domain.flatIndex==0)
   //   printf("calling EvalEOSForElems for %d rep\n", rep);
   for (Int_t j = 0; j < rep; j++) {
-    CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("EvalEOSForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElemReg),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    HAPI_LAUNCH_KERNEL_WRAPPER(Kokkos::parallel_for("EvalEOSForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElemReg),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i) {
       Index_t ielem = domain.regElemlist(r,i);
       e_old[i] = domain.c_e(ielem);
@@ -1838,7 +1837,7 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
         }
       }
       work[i] = Real_t(0.);
-    });)
+    }), execSpace.cuda_stream())
 
     CalcEnergyForElems(p_new, e_new, q_new, bvc, pbvc, p_old, e_old, q_old,
                        compression, compHalfStep, vnewc, work, delvc, pmin, p_cut,
@@ -1868,8 +1867,8 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
 
     auto vnewc = domain.vnewc;
 
-    Kokkos::parallel_for("ApplyMaterialPropertiesForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
-        KOKKOS_LAMBDA(const int i) { vnewc[i] = domain.vnew(i); });
+    CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("ApplyMaterialPropertiesForElems A",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+        KOKKOS_LAMBDA(const int i) { vnewc[i] = domain.vnew(i); });)
 
     if (eosvmin != Real_t(0.)) {
       Kokkos::parallel_for("ApplyMaterialPropertiesForElems B",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
@@ -1880,15 +1879,15 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
     }
 
     if (eosvmax != Real_t(0.)) {
-      Kokkos::parallel_for("ApplyMaterialPropertiesForElems C",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+      CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("ApplyMaterialPropertiesForElems C",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                            KOKKOS_LAMBDA(const int i) {
         if (vnewc[i] > eosvmax)
           vnewc[i] = eosvmax;
-      });
+      });)
     }
 
     int error = 0;
-    Kokkos::parallel_reduce("ApplyMaterialPropertiesForElems D",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_reduce("ApplyMaterialPropertiesForElems D",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i, int& err) {
       Real_t vc = domain.v(i);
       if (eosvmin != Real_t(0.)) {
@@ -1902,7 +1901,7 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
       if (vc <= 0.) {
         err++;
       }
-    },error);
+    },error);)
 
     if(error)
       CkAbort("ApplyMaterialPropertiesForElems: domain contains zero or negative volume");
@@ -1926,7 +1925,7 @@ static inline void ApplyMaterialPropertiesForElems(Domain &domain, ExecSpace exe
 static inline void UpdateVolumesForElems(Domain &domain, Real_t v_cut,
                                          Index_t length, ExecSpace execSpace) {
   if (length != 0) {
-    Kokkos::parallel_for("UpdateVolumesForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_for("UpdateVolumesForElems",  Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                          KOKKOS_LAMBDA(const int i) {
       Real_t tmpV = domain.vnew(i);
 
@@ -1934,7 +1933,7 @@ static inline void UpdateVolumesForElems(Domain &domain, Real_t v_cut,
         tmpV = Real_t(1.0);
 
       domain.v(i) = tmpV;
-    });
+    });)
   }
 
   return;
@@ -1953,7 +1952,7 @@ static inline void CalcCourantConstraintForElems(Domain &domain, Index_t length,
 
   MinFinder result;
 
-  Kokkos::parallel_reduce(
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_reduce(
        Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), KOKKOS_LAMBDA(const int i, MinFinder &minf) {
                 Index_t indx = domain.regElemlist(r,i);
                 Real_t dtf = domain.ss(indx) * domain.ss(indx);
@@ -1972,7 +1971,7 @@ static inline void CalcCourantConstraintForElems(Domain &domain, Index_t length,
                   minf += tmp;
                 }
               },
-      result);
+      result);)
 
   dtcourant_tmp = result.val;
 
@@ -2000,7 +1999,7 @@ static inline void CalcHydroConstraintForElems(Domain &domain, Index_t length,
   Index_t hydro_elem = -1;
   MinFinder result;
 
-  Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), KOKKOS_LAMBDA(const int i, MinFinder &minf) {
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, length),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), KOKKOS_LAMBDA(const int i, MinFinder &minf) {
                                     Index_t indx = domain.regElemlist(r,i);
 
                                     if (domain.vdov(indx) != Real_t(0.)) {
@@ -2014,7 +2013,7 @@ static inline void CalcHydroConstraintForElems(Domain &domain, Index_t length,
                                       }
                                     }
                                   },
-                          result);
+                          result);)
 
   if (result.val > dthydro) {
     result.val = dthydro;
@@ -2029,12 +2028,12 @@ static inline void CalcHydroConstraintForElems(Domain &domain, Index_t length,
 
 static inline void CheckQStop(Domain &domain, ExecSpace execSpace) {
   Index_t idx = 0;
-  Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, domain.numElem()),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
+  CUPTI_LAUNCH_WRAPPER(Kokkos::parallel_reduce( Kokkos::Experimental::require(RangePolicy(execSpace, 0, domain.numElem()),  Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
       KOKKOS_LAMBDA (const Index_t& i, Index_t& count) {
       if ( domain.q(i) > domain.qstop() ) {
           count++ ;
       }
-  }, idx);
+  }, idx);)
 
   if (idx > 0) {
       CkAbort("QStopError");
@@ -2062,7 +2061,7 @@ Main::Main(CkArgMsg* m) {
 
   Int_t numRanks;
   Int_t myRank;
-  struct cmdLineOpts opts;
+  // opts;
 
   opts.its = 9999999;
   opts.nx = 30;
@@ -2144,6 +2143,8 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
 
   Int_t col, row, plane, side;
   flatIndex = thisIndex.x + thisIndex.y * numChares_ + thisIndex.z * numChares_ * numChares_;
+  printf("flatindex %d mapped to PE(%d)[%d]\n", flatIndex, CkMyPe(), CmiMyNode());
+  fflush(stdout);
   InitMeshDecomp(numRanks, flatIndex, &col, &row, &plane, &side);
   locDom = new Domain(numRanks, col, row, plane, nx_, side, nr_, balance_, cost_, flatIndex);
 

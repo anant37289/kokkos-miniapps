@@ -26,6 +26,8 @@
 #include "hapi.h"
 #include "hapi_nvtx.h"
 
+extern CProxy_Main mainProxy;
+
 struct TupleHash {
     template <class T1, class T2, class T3>
     std::size_t operator()(const std::tuple<T1, T2, T3>& v) const {
@@ -111,7 +113,9 @@ public:
 
   void ResumeFromSync()
   {
-    thisProxy[thisIndex].run();
+    CkCallback cb_done(CkReductionTarget(Main, endLB), mainProxy);
+    contribute(cb_done);
+    // thisProxy[thisIndex].run(); //the above calls 
   }
 
   void pup(PUP::er &p)
@@ -180,6 +184,8 @@ public:
 
 class Main : public CBase_Main {
   Main_SDAG_CODE
+  struct cmdLineOpts opts;
+  double last_lb_start = 0;
 
 public:
   Main(CkArgMsg *m);

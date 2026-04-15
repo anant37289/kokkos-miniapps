@@ -38,6 +38,24 @@ mainmodule lulesh {
                 }
             }
         };
+
+        entry [reductiontarget] void startLB()
+        {
+            serial {
+                CkPrintf("Time per iteration %f\n", (CkWallTimer() - start)/opts.lb_every);
+                last_lb_start = CkWallTimer();
+                domainProxy.callAtSync();
+            }
+        }
+
+        entry [reductiontarget] void endLB()
+        {
+            serial {
+                ckout<<"Last LB took "<<CkWallTimer() - last_lb_start<<" s"<<endl;
+                start = CkWallTimer();
+                domainProxy.run();
+            }
+        }
     };
 
     nodegroup KokkosManager {
@@ -53,6 +71,13 @@ mainmodule lulesh {
             int numChares_);
 
         entry [reductiontarget] void initDone();
+
+        entry void callAtSync()
+        {
+            serial {
+                AtSync();
+            }
+        }
 
         entry void init(int numRanks, Index_t nx, int nr,
                           int balance, int cost, int numChares_) {
@@ -308,8 +333,12 @@ mainmodule lulesh {
                 serial {
                     // run next iteration
                     if ((locDom->time() < locDom->stoptime()) && (locDom->cycle() < opts.its)) {
-                        if((locDom->cycle()+1)%opts.lb_every==0)
-                            AtSync();
+                        if(locDom->cycle()%opts.lb_every==0)
+                        // AtSync();
+                        {
+                            CkCallback cb_start(CkReductionTarget(Main, startLB), mainProxy);
+                            contribute(cb_start);
+                        }
                         else
                             thisProxy[thisIndex].run();
                     } else {
