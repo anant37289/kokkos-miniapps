@@ -1,3 +1,4 @@
+
 set(CHARM_DIR "/u/ajain18/reconverse_charm_integration/charm/multicore-linux-x86_64-cuda")
 set(BASE_DIR "/u/ajain18/kokkos-miniapps/lulesh-2.0/kokkos-charm/")
 set(CUDA_DIR "/opt/nvidia/hpc_sdk/Linux_x86_64/25.3/cuda/12.8")

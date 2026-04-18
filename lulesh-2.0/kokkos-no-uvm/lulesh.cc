@@ -2141,8 +2141,12 @@ int main(int argc, char *argv[]) {
 #ifdef KOKKOS_ENABLE_CUDA
   Int_t visibleDevices;
   cudaGetDeviceCount(&visibleDevices);
-  //TODO: Make for multi node
-  Int_t myDeviceId = (myRank*visibleDevices)/numRanks;
+  // Use SLURM_LOCALID (node-local rank) so each rank maps to its node-local GPU
+  // regardless of whether SLURM sets CUDA_VISIBLE_DEVICES per-task or per-job
+  const char* local_id_env = getenv("SLURM_LOCALID");
+  Int_t localRank = (local_id_env != nullptr) ? atoi(local_id_env) : (myRank % visibleDevices);
+  Int_t myDeviceId = localRank % visibleDevices;
+  printf("rank %d (local %d) takes gpu %d / %d\n", myRank, localRank, myDeviceId, visibleDevices);
   Kokkos::initialize(Kokkos::InitializationSettings().set_device_id(myDeviceId));
 #else 
   Kokkos::initialize();
