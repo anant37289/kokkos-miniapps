@@ -520,13 +520,7 @@ public:
     return &m_nodeElemCornerList[m_nodeElemStart[idx]];
   }
 
-  KOKKOS_INLINE_FUNCTION Real_t& commDataSend(Index_t idx) const {
-    return commDataSendView[idx];
-  }
 
-  KOKKOS_INLINE_FUNCTION  Real_t& commDataRecv(Index_t idx) const {
-    return commDataRecvView[idx];
-  }
 
   // Parameters
 
@@ -588,19 +582,6 @@ public:
   Index_t &maxPlaneSize() { return m_maxPlaneSize; }
   Index_t &maxEdgeSize() { return m_maxEdgeSize; }
 
-//
-// MPI-Related additional data
-//
-
-  // Communication Work space
-  //Real_t *commDataSend;
-  //Real_t *commDataRecv;
-
-  Kokkos::View<Real_t*> commDataSendView;
-  Kokkos::View<Real_t*> commDataRecvView;
-  Kokkos::View<Real_t*> commDataRecvViewSBN;
-  Kokkos::View<Real_t*> commDataRecvViewPosVel;
-  Kokkos::View<Real_t*> commDataRecvViewMonoQ;
 
   void BuildMesh(Int_t nx, Int_t edgeNodes, Int_t edgeElems);
   void SetupThreadSupportStructures();
@@ -790,12 +771,11 @@ typedef Real_t &(Domain::*Domain_member)(Index_t) const;
 
 class CommData {
 public:
-  CommData(int pmsg_, int emsg_, int cmsg_, int offset_,
+  CommData(int offset_,
            int src_stride_0, int src_stride_1,
            int dst_stride_0, int dst_stride_1,
            int size_0, int size_1)
-      : pmsg(pmsg_), emsg(emsg_), cmsg(cmsg_), 
-        offset(offset_) {
+      : offset(offset_), ghostOffset(0) {
     src_stride[0] = src_stride_0;
     src_stride[1] = src_stride_1;
     dst_stride[0] = dst_stride_0;
@@ -804,7 +784,7 @@ public:
     size[1] = size_1;
   }
 
-  CommData() : pmsg(0), emsg(0), cmsg(0), offset(0) {
+  CommData() : offset(0), ghostOffset(0) {
     src_stride[0] = 0;
     src_stride[1] = 0;
     dst_stride[0] = 0;
@@ -814,8 +794,7 @@ public:
   }
 
   CommData(const CommData& other) 
-      : pmsg(other.pmsg), emsg(other.emsg), cmsg(other.cmsg),
-        offset(other.offset) {
+      : offset(other.offset), ghostOffset(other.ghostOffset), buffer(other.buffer) {
     src_stride[0] = other.src_stride[0];
     src_stride[1] = other.src_stride[1];
     dst_stride[0] = other.dst_stride[0];
@@ -826,10 +805,9 @@ public:
 
   CommData& operator=(const CommData& other) {
     if (this != &other) {
-      pmsg = other.pmsg;
-      emsg = other.emsg;
-      cmsg = other.cmsg;
       offset = other.offset;
+      ghostOffset = other.ghostOffset;
+      buffer = other.buffer;
       src_stride[0] = other.src_stride[0];
       src_stride[1] = other.src_stride[1];
       dst_stride[0] = other.dst_stride[0];
@@ -841,10 +819,11 @@ public:
   }
 
   int offset;
+  int ghostOffset; // sequential index used for MonoQ ghost region destination
   int src_stride[2];
   int dst_stride[2];
   int size[2];
-  int pmsg, emsg, cmsg;
+  Kokkos::View<Real_t*> buffer;
 };
 
 struct cmdLineOpts {

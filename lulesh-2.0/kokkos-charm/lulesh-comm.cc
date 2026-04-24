@@ -120,6 +120,21 @@ void Add2D(Kokkos::View<Real_t*> &src,
 
 /******************************************/
 
+// Helper to create a CommData and allocate its per-neighbor buffer
+static CommData MakeCommData(int offset,
+   int src_stride_0, int src_stride_1,
+   int dst_stride_0, int dst_stride_1,
+   int size_0, int size_1)
+{
+   CommData cd(offset, src_stride_0, src_stride_1, dst_stride_0, dst_stride_1, size_0, size_1);
+   int bufSize = MAX_FIELDS_PER_MPI_COMM * size_0 * size_1;
+   // For corners, ensure at least CACHE_COHERENCE_PAD_REAL per field
+   if (size_0 == 1 && size_1 == 1)
+      bufSize = MAX_FIELDS_PER_MPI_COMM * CACHE_COHERENCE_PAD_REAL;
+   Kokkos::resize(cd.buffer, bufSize);
+   Kokkos::deep_copy(cd.buffer, 0);
+   return cd;
+}
 
 void DomainChare::CommDataSendInit(Domain& domain, Index_t dx, Index_t dy, Index_t dz, 
                                bool doSend, bool planeOnly, CommDataMap_t &commDataMap)
@@ -127,13 +142,6 @@ void DomainChare::CommDataSendInit(Domain& domain, Index_t dx, Index_t dy, Index
    if (domain.numRanks() == 1)
       return ;
 
-   /* post recieve buffers for all incoming messages */
-   int myRank ;
-   Index_t maxPlaneComm = domain.maxPlaneSize() ;
-   Index_t maxEdgeComm  = domain.maxEdgeSize() ;
-   Index_t pmsg = 0 ; /* plane comm msg */
-   Index_t emsg = 0 ; /* edge comm msg */
-   Index_t cmsg = 0 ; /* corner comm msg */
    bool rowMin, rowMax, colMin, colMax, planeMin, planeMax ;
    /* assume communication to 6 neighbors by default */
    rowMin = rowMax = colMin = colMax = planeMin = planeMax = true ;
@@ -161,174 +169,146 @@ void DomainChare::CommDataSendInit(Domain& domain, Index_t dx, Index_t dy, Index
       int sendCount = dx * dy ;
 
       if (planeMin) {
-         commDataMap[{thisIndex.x, thisIndex.y, thisIndex.z-1}] = CommData(
-            pmsg, emsg, cmsg, 0, 1, 0, 1, 0, sendCount, 1);
-         ++pmsg ;
+         commDataMap[{thisIndex.x, thisIndex.y, thisIndex.z-1}] =
+            MakeCommData(0, 1, 0, 1, 0, sendCount, 1);
       }
       if (planeMax && doSend) {
-         commDataMap[{thisIndex.x, thisIndex.y, thisIndex.z+1}] = CommData(
-            pmsg, emsg, cmsg, dx*dy*(dz - 1), 1, 0, 1, 0, sendCount, 1);
-         ++pmsg ;
+         commDataMap[{thisIndex.x, thisIndex.y, thisIndex.z+1}] =
+            MakeCommData(dx*dy*(dz - 1), 1, 0, 1, 0, sendCount, 1);
       }
    }
    if (rowMin | rowMax) {
       /* ASSUMING ONE DOMAIN PER RANK, CONSTANT BLOCK SIZE HERE */
-      int sendCount = dx * dz ;
 
       if (rowMin) {
-         commDataMap[{thisIndex.x, thisIndex.y-1, thisIndex.z}] = CommData(
-            pmsg, emsg, cmsg, 0, 1, dx*dy, 1, dx, dx, dz);
-         ++pmsg ;
+         commDataMap[{thisIndex.x, thisIndex.y-1, thisIndex.z}] =
+            MakeCommData(0, 1, dx*dy, 1, dx, dx, dz);
       }
       if (rowMax && doSend) {
-         commDataMap[{thisIndex.x, thisIndex.y+1, thisIndex.z}] = CommData(
-            pmsg, emsg, cmsg, dx*(dy - 1), 1, dx*dy, 1, dx, dx, dz);
-         ++pmsg ;
+         commDataMap[{thisIndex.x, thisIndex.y+1, thisIndex.z}] =
+            MakeCommData(dx*(dy - 1), 1, dx*dy, 1, dx, dx, dz);
       }
    }
    if (colMin | colMax) {
       /* ASSUMING ONE DOMAIN PER RANK, CONSTANT BLOCK SIZE HERE */
-      int sendCount = dy * dz ;
 
       if (colMin) {
-         commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z}] = CommData(
-            pmsg, emsg, cmsg, 0, dx, dx*dy, 1, dy, dy, dz);
-         ++pmsg ;
+         commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z}] =
+            MakeCommData(0, dx, dx*dy, 1, dy, dy, dz);
       }
       if (colMax && doSend) {
-         commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z}] = CommData(
-            pmsg, emsg, cmsg, dx - 1, dx, dx*dy, 1, dy, dy, dz);
-         ++pmsg ;
+         commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z}] =
+            MakeCommData(dx - 1, dx, dx*dy, 1, dy, dy, dz);
       }
    }
 
    if (!planeOnly) {
       if (rowMin && colMin) {
          commDataMap[{thisIndex.x-1, thisIndex.y-1, thisIndex.z}] = 
-            CommData(pmsg, emsg, cmsg, 0, dx*dy, 0, 1, 0, dz, 1);
-         ++emsg ;
+            MakeCommData(0, dx*dy, 0, 1, 0, dz, 1);
       }
 
       if (rowMin && planeMin) {
          commDataMap[{thisIndex.x, thisIndex.y-1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, 0, 1, 0, 1, 0, dx, 1);
-         ++emsg ;
+            MakeCommData(0, 1, 0, 1, 0, dx, 1);
       }
 
       if (colMin && planeMin) {
          commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, 0, dx, 0, 1, 0, dy, 1);
-         ++emsg ;
+            MakeCommData(0, dx, 0, 1, 0, dy, 1);
       }
 
       if (rowMax && colMax && doSend) {
          commDataMap[{thisIndex.x+1, thisIndex.y+1, thisIndex.z}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy - 1, dx*dy, 0, 1, 0, dz, 1);
-         ++emsg ;
+            MakeCommData(dx*dy - 1, dx*dy, 0, 1, 0, dz, 1);
       }
 
       if (rowMax && planeMax && doSend) {
          commDataMap[{thisIndex.x, thisIndex.y+1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*(dy-1) + dx*dy*(dz-1), 1, 0, 1, 0, dx, 1);
-         ++emsg ;
+            MakeCommData(dx*(dy-1) + dx*dy*(dz-1), 1, 0, 1, 0, dx, 1);
       }
 
       if (colMax && planeMax && doSend) {
          commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz-1) + dx-1, dx, 0, 1, 0, dy, 1);
-         ++emsg ;
+            MakeCommData(dx*dy*(dz-1) + dx-1, dx, 0, 1, 0, dy, 1);
       }
 
       if (rowMax && colMin && doSend) {
          commDataMap[{thisIndex.x-1, thisIndex.y+1, thisIndex.z}] = 
-            CommData(pmsg, emsg, cmsg, dx*(dy - 1), dx*dy, 0, 1, 0, dz, 1);
-         ++emsg ;
+            MakeCommData(dx*(dy - 1), dx*dy, 0, 1, 0, dz, 1);
       }
 
       if (rowMin && planeMax && doSend) {
          commDataMap[{thisIndex.x, thisIndex.y-1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz-1), 1, 0, 1, 0, dx, 1);
-         ++emsg ;
+            MakeCommData(dx*dy*(dz-1), 1, 0, 1, 0, dx, 1);
       }
 
       if (colMin && planeMax && doSend) {
          commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz - 1), dx, 0, 1, 0, dy, 1);
-         ++emsg ;
+            MakeCommData(dx*dy*(dz - 1), dx, 0, 1, 0, dy, 1);
       }
 
       if (rowMin && colMax) {
          commDataMap[{thisIndex.x+1, thisIndex.y-1, thisIndex.z}] = 
-            CommData(pmsg, emsg, cmsg, dx-1, dx*dy, 0, 1, 0, dz, 1);
-         ++emsg ;
+            MakeCommData(dx-1, dx*dy, 0, 1, 0, dz, 1);
       }
 
       if (rowMax && planeMin) {
          commDataMap[{thisIndex.x, thisIndex.y+1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, dx*(dy - 1), 1, 0, 1, 0, dx, 1);
-         ++emsg ;
+            MakeCommData(dx*(dy - 1), 1, 0, 1, 0, dx, 1);
       }
 
       if (colMax && planeMin) {
          commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, dx - 1, dx, 0, 1, 0, dy, 1);
-         ++emsg ;
+            MakeCommData(dx - 1, dx, 0, 1, 0, dy, 1);
       }
 
       if (rowMin && colMin && planeMin) {
          /* corner at domain logical coord (0, 0, 0) */
          commDataMap[{thisIndex.x-1, thisIndex.y-1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, 0, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(0, 1, 0, 1, 0, 1, 1);
       }
       if (rowMin && colMin && planeMax && doSend) {
          /* corner at domain logical coord (0, 0, 1) */
          Index_t idx = dx*dy*(dz - 1) ;
          commDataMap[{thisIndex.x-1, thisIndex.y-1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, idx, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(idx, 1, 0, 1, 0, 1, 1);
       }
       if (rowMin && colMax && planeMin) {
          /* corner at domain logical coord (1, 0, 0) */
          Index_t idx = dx - 1 ;
          commDataMap[{thisIndex.x+1, thisIndex.y-1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, idx, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(idx, 1, 0, 1, 0, 1, 1);
       }
       if (rowMin && colMax && planeMax && doSend) {
          /* corner at domain logical coord (1, 0, 1) */
          Index_t idx = dx*dy*(dz - 1) + (dx - 1) ;
          commDataMap[{thisIndex.x+1, thisIndex.y-1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, idx, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(idx, 1, 0, 1, 0, 1, 1);
       }
       if (rowMax && colMin && planeMin) {
          /* corner at domain logical coord (0, 1, 0) */
          Index_t idx = dx*(dy - 1) ;
          commDataMap[{thisIndex.x-1, thisIndex.y+1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, idx, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(idx, 1, 0, 1, 0, 1, 1);
       }
       if (rowMax && colMin && planeMax && doSend) {
          /* corner at domain logical coord (0, 1, 1) */
          Index_t idx = dx*dy*(dz - 1) + dx*(dy - 1) ;
          commDataMap[{thisIndex.x-1, thisIndex.y+1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, idx, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(idx, 1, 0, 1, 0, 1, 1);
       }
       if (rowMax && colMax && planeMin) {
          /* corner at domain logical coord (1, 1, 0) */
          Index_t idx = dx*dy - 1 ;
          commDataMap[{thisIndex.x+1, thisIndex.y+1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, idx, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(idx, 1, 0, 1, 0, 1, 1);
       }
       if (rowMax && colMax && planeMax && doSend) {
          /* corner at domain logical coord (1, 1, 1) */
          Index_t idx = dx*dy*dz - 1 ;
          commDataMap[{thisIndex.x+1, thisIndex.y+1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, idx, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(idx, 1, 0, 1, 0, 1, 1);
       }
    }
 }
@@ -339,12 +319,6 @@ void DomainChare::CommDataRecvInit(Domain& domain, Index_t dx, Index_t dy, Index
    if (domain.numRanks() == 1)
       return ;
 
-   /* post recieve buffers for all incoming messages */
-   Index_t maxPlaneComm =  domain.maxPlaneSize() ;
-   Index_t maxEdgeComm  = domain.maxEdgeSize() ;
-   Index_t pmsg = 0 ; /* plane comm msg */
-   Index_t emsg = 0 ; /* edge comm msg */
-   Index_t cmsg = 0 ; /* corner comm msg */
    bool rowMin, rowMax, colMin, colMax, planeMin, planeMax ;
 
    /* assume communication to 6 neighbors by default */
@@ -370,165 +344,146 @@ void DomainChare::CommDataRecvInit(Domain& domain, Index_t dx, Index_t dy, Index
    }
 
    /* receive data from neighboring domain faces */
+   int planeIdx = 0; // sequential index for ghost region destination (used by MonoQ)
    if (planeMin && doRecv) {
       /* contiguous memory */
-      commDataMap[{thisIndex.x, thisIndex.y, thisIndex.z-1}] = CommData(
-         pmsg, emsg, cmsg, 0, 1, 0, 1, 0, dx * dy, 1);
-      ++pmsg ;
+      auto cd = MakeCommData(0, 1, 0, 1, 0, dx * dy, 1);
+      cd.ghostOffset = planeIdx++;
+      commDataMap[{thisIndex.x, thisIndex.y, thisIndex.z-1}] = cd;
    }
    if (planeMax) {
       /* contiguous memory */
-      commDataMap[{thisIndex.x, thisIndex.y, thisIndex.z+1}] = CommData(
-         pmsg, emsg, cmsg, dx*dy*(dz - 1), 1, 0, 1, 0, dx * dy, 1);
-      ++pmsg ;
+      auto cd = MakeCommData(dx*dy*(dz - 1), 1, 0, 1, 0, dx * dy, 1);
+      cd.ghostOffset = planeIdx++;
+      commDataMap[{thisIndex.x, thisIndex.y, thisIndex.z+1}] = cd;
    }
    if (rowMin && doRecv) {
       /* semi-contiguous memory */
-      commDataMap[{thisIndex.x, thisIndex.y-1, thisIndex.z}] = CommData(
-         pmsg, emsg, cmsg, 0, 1, dx, 1, dx*dy, dx, dz);
-      ++pmsg ;
+      auto cd = MakeCommData(0, 1, dx, 1, dx*dy, dx, dz);
+      cd.ghostOffset = planeIdx++;
+      commDataMap[{thisIndex.x, thisIndex.y-1, thisIndex.z}] = cd;
    }
    if (rowMax) {
       /* semi-contiguous memory */
-      commDataMap[{thisIndex.x, thisIndex.y+1, thisIndex.z}] = CommData(
-         pmsg, emsg, cmsg, dx*(dy - 1), 1, dx, 1, dx*dy, dx, dz);
-      ++pmsg ;
+      auto cd = MakeCommData(dx*(dy - 1), 1, dx, 1, dx*dy, dx, dz);
+      cd.ghostOffset = planeIdx++;
+      commDataMap[{thisIndex.x, thisIndex.y+1, thisIndex.z}] = cd;
    }
    if (colMin && doRecv) {
       /* scattered memory */
-      commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z}] = CommData(
-         pmsg, emsg, cmsg, 0, 1, dy, dx, dx*dy, dy, dz);
-      ++pmsg ;
+      auto cd = MakeCommData(0, 1, dy, dx, dx*dy, dy, dz);
+      cd.ghostOffset = planeIdx++;
+      commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z}] = cd;
    }
    if (colMax) {
       /* scattered memory */
-      commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z}] = CommData(
-         pmsg, emsg, cmsg, dx - 1, 1, dy, dx, dx*dy, dy, dz);
-      ++pmsg ;
+      auto cd = MakeCommData(dx - 1, 1, dy, dx, dx*dy, dy, dz);
+      cd.ghostOffset = planeIdx++;
+      commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z}] = cd;
    }
 
    if (!planeOnly) {
       /* receive data from domains connected only by an edge */
       if (rowMin && colMin && doRecv) {
          commDataMap[{thisIndex.x-1, thisIndex.y-1, thisIndex.z}] = 
-            CommData(pmsg, emsg, cmsg, 0, 1, 0, dx*dy, 0, dz, 1);
-         ++emsg ;
+            MakeCommData(0, 1, 0, dx*dy, 0, dz, 1);
       }
 
       if (rowMin && planeMin && doRecv) {
          commDataMap[{thisIndex.x, thisIndex.y-1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, 0, 1, 0, 1, 0, dx, 1);
-         ++emsg ;
+            MakeCommData(0, 1, 0, 1, 0, dx, 1);
       }
 
       if (colMin && planeMin && doRecv) {
          commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z-1}] =
-            CommData(pmsg, emsg, cmsg, 0, 1, 0, dx, 0, dy, 1);
-         ++emsg ;
+            MakeCommData(0, 1, 0, dx, 0, dy, 1);
       }
 
       if (rowMax && colMax) {
          commDataMap[{thisIndex.x+1, thisIndex.y+1, thisIndex.z}] =
-            CommData(pmsg, emsg, cmsg, dx*dy - 1, 1, 0, dx*dy, 0, dz, 1);
-         ++emsg ;
+            MakeCommData(dx*dy - 1, 1, 0, dx*dy, 0, dz, 1);
       }
 
       if (rowMax && planeMax) {
          commDataMap[{thisIndex.x, thisIndex.y+1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*(dy-1) + dx*dy*(dz-1), 1, 0, 1, 0, dx, 1);
-         ++emsg ;
+            MakeCommData(dx*(dy-1) + dx*dy*(dz-1), 1, 0, 1, 0, dx, 1);
       }
 
       if (colMax && planeMax) {
          commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z+1}] =
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz-1) + dx-1, 1, 0, dx, 0, dy, 1);
-         ++emsg ;
+            MakeCommData(dx*dy*(dz-1) + dx-1, 1, 0, dx, 0, dy, 1);
       }
 
       if (rowMax && colMin) {
          commDataMap[{thisIndex.x-1, thisIndex.y+1, thisIndex.z}] =
-            CommData(pmsg, emsg, cmsg, dx*(dy - 1), 1, 0, dx*dy, 0, dz, 1);
-         ++emsg ;
+            MakeCommData(dx*(dy - 1), 1, 0, dx*dy, 0, dz, 1);
       }
 
       if (rowMin && planeMax) {
          commDataMap[{thisIndex.x, thisIndex.y-1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz-1), 1, 0, 1, 0, dx, 1);
-         ++emsg ;
+            MakeCommData(dx*dy*(dz-1), 1, 0, 1, 0, dx, 1);
       }
 
       if (colMin && planeMax) {
          commDataMap[{thisIndex.x-1, thisIndex.y, thisIndex.z+1}] =
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz - 1), 1, 0, dx, 0, dy, 1);
-         ++emsg ;
+            MakeCommData(dx*dy*(dz - 1), 1, 0, dx, 0, dy, 1);
       }
 
       if (rowMin && colMax && doRecv) {
          commDataMap[{thisIndex.x+1, thisIndex.y-1, thisIndex.z}] =
-            CommData(pmsg, emsg, cmsg, dx-1, 1, 0, dx*dy, 0, dz, 1);
-         ++emsg ;
+            MakeCommData(dx-1, 1, 0, dx*dy, 0, dz, 1);
       }
 
       if (rowMax && planeMin && doRecv) {
          commDataMap[{thisIndex.x, thisIndex.y+1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, dx*(dy - 1), 1, 0, 1, 0, dx, 1);
-         ++emsg ;
+            MakeCommData(dx*(dy - 1), 1, 0, 1, 0, dx, 1);
       }
 
       if (colMax && planeMin && doRecv) {
          commDataMap[{thisIndex.x+1, thisIndex.y, thisIndex.z-1}] =
-            CommData(pmsg, emsg, cmsg, dx - 1, 1, 0, dx, 0, dy, 1);
-         ++emsg ;
+            MakeCommData(dx - 1, 1, 0, dx, 0, dy, 1);
       }
 
       /* receive data from domains connected only by a corner */
       if (rowMin && colMin && planeMin && doRecv) {
          /* corner at domain logical coord (0, 0, 0) */
          commDataMap[{thisIndex.x-1, thisIndex.y-1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, 0, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(0, 1, 0, 1, 0, 1, 1);
       }
       if (rowMin && colMin && planeMax) {
          /* corner at domain logical coord (0, 0, 1) */
          commDataMap[{thisIndex.x-1, thisIndex.y-1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz - 1), 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(dx*dy*(dz - 1), 1, 0, 1, 0, 1, 1);
       }
       if (rowMin && colMax && planeMin && doRecv) {
          /* corner at domain logical coord (1, 0, 0) */
          commDataMap[{thisIndex.x+1, thisIndex.y-1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, dx - 1, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(dx - 1, 1, 0, 1, 0, 1, 1);
       }
       if (rowMin && colMax && planeMax) {
          /* corner at domain logical coord (1, 0, 1) */
          commDataMap[{thisIndex.x+1, thisIndex.y-1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz - 1) + (dx - 1), 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(dx*dy*(dz - 1) + (dx - 1), 1, 0, 1, 0, 1, 1);
       }
       if (rowMax && colMin && planeMin && doRecv) {
          /* corner at domain logical coord (0, 1, 0) */
          commDataMap[{thisIndex.x-1, thisIndex.y+1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, dx*(dy - 1), 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(dx*(dy - 1), 1, 0, 1, 0, 1, 1);
       }
       if (rowMax && colMin && planeMax) {
          /* corner at domain logical coord (0, 1, 1) */
          commDataMap[{thisIndex.x-1, thisIndex.y+1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*(dz - 1) + dx*(dy - 1), 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(dx*dy*(dz - 1) + dx*(dy - 1), 1, 0, 1, 0, 1, 1);
       }
       if (rowMax && colMax && planeMin && doRecv) {
          /* corner at domain logical coord (1, 1, 0) */
          commDataMap[{thisIndex.x+1, thisIndex.y+1, thisIndex.z-1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy - 1, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(dx*dy - 1, 1, 0, 1, 0, 1, 1);
       }
       if (rowMax && colMax && planeMax) {
          /* corner at domain logical coord (1, 1, 1) */
          commDataMap[{thisIndex.x+1, thisIndex.y+1, thisIndex.z+1}] = 
-            CommData(pmsg, emsg, cmsg, dx*dy*dz - 1, 1, 0, 1, 0, 1, 1);
-         ++cmsg ;
+            MakeCommData(dx*dy*dz - 1, 1, 0, 1, 0, 1, 1);
       }
    }
 }
@@ -551,9 +506,6 @@ void DomainChare::CommSend(Domain& domain, int msgType,
       return ;
    }
 
-   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
-   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
-
    CommDataMapIter_t it;
 
    DBG_PRINTF("[DEBUG CommSend] (%d,%d,%d) iter=%u msgType=0x%x xferFields=%d commDataMap.size()=%lu\n",
@@ -573,41 +525,36 @@ void DomainChare::CommSend(Domain& domain, int msgType,
 
    for (it = commDataMap.begin(); it != commDataMap.end(); ++it) {
       std::tuple<int, int, int> idx = it->first ;
-      CommData cdata = it->second ;
+      CommData& cdata = it->second ;
       int offsetX = std::get<0>(idx) - thisIndex.x ;
       int offsetY = std::get<1>(idx) - thisIndex.y ;
       int offsetZ = std::get<2>(idx) - thisIndex.z ;
-
-      int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL; 
 
       if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
          offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
             Copy2D(src, cdata.offset, cdata.src_stride[0], cdata.src_stride[1],
-                   domain.commDataSendView, 
-                   offset + fi * cdata.size[0] * cdata.size[1], 
+                   cdata.buffer, 
+                   fi * cdata.size[0] * cdata.size[1], 
                    cdata.dst_stride[0], cdata.dst_stride[1], 
-                   cdata.size[0], cdata.size[1], commSpace);//TODO:: sync.use event for correctness, i think work has been on computeSpace before this(current this is okay as they are the same)
+                   cdata.size[0], cdata.size[1], commSpace);
          }
       } else {
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
             Kokkos::View<Real_t*> src = fieldData[fi] ;
             Copy1D(src, cdata.offset, cdata.src_stride[0],
-                   domain.commDataSendView, 
-                   offset + fi * cdata.size[0], 
+                   cdata.buffer, 
+                   fi * cdata.size[0], 
                    cdata.dst_stride[0], cdata.size[0], commSpace);
          }
       }
 
-      // commSpace.fence();
-
-      // CkCallback* cb = new CkCallback(CkIndex_DomainChare::packingDone(NULL), thisProxy[thisIndex]);
       int sendCount = xferFields * cdata.size[0] * cdata.size[1];
       PackingDoneMsg* msg = new PackingDoneMsg(msgType,
          iter,
          std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
-         xferFields, sendCount, offset);
+         xferFields, sendCount);
       
       uint32_t ref = MAKE_REF(msg->msgType, msg->sendIter);
       CkCallback* cb;
@@ -625,15 +572,15 @@ void DomainChare::CommSend(Domain& domain, int msgType,
       else
          CkAbort("DomainChare::packingDone: Unknown msgType") ;
 
-      Real_t* sendPtr = locDom->commDataSendView.data() + msg->offset;
+      Real_t* sendPtr = cdata.buffer.data();
 
       thisProxy(msg->x, msg->y, msg->z).CommRecv(ref, thisIndex.x, thisIndex.y, thisIndex.z, 
       msg->xferFields, msg->sendCount, CkDeviceBuffer(sendPtr, *cb, commStream));
       
-      DBG_PRINTF("[DEBUG CommSend packing] (%d,%d,%d)->(%d,%d,%d) iter=%u msgType=0x%x xferFields=%d sendCount=%d offset=%d\n",
+      DBG_PRINTF("[DEBUG CommSend packing] (%d,%d,%d)->(%d,%d,%d) iter=%u msgType=0x%x xferFields=%d sendCount=%d\n",
          thisIndex.x, thisIndex.y, thisIndex.z,
          std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
-         iter, msgType, xferFields, sendCount, offset);
+         iter, msgType, xferFields, sendCount);
 
       // hapiAddCallback(commStream, cb, msg);
    }
@@ -681,26 +628,32 @@ void DomainChare::packingDone(PackingDoneMsg* msg) {
    else
       CkAbort("DomainChare::packingDone: Unknown msgType") ;
 
-   Real_t* sendPtr = locDom->commDataSendView.data() + msg->offset;
+   // Look up the send map to find the per-neighbor buffer
+   CommDataMap_t* sendMap;
+   if (msg->msgType == MSG_SYNC_POS_VEL)
+      sendMap = &commDataSendPosVel;
+   else if (msg->msgType == MSG_MONOQ)
+      sendMap = &commDataSendMonoQ;
+   else
+      sendMap = &commDataSendSBN;
+
+   CommData& cdata = (*sendMap)[{msg->x, msg->y, msg->z}];
+   Real_t* sendPtr = cdata.buffer.data();
 
    #if DEBUG_COMM
    // Sender-side debug: print source field values at packed positions for PosVel z-face
    if(msg->msgType == MSG_SYNC_POS_VEL)
    {
-      auto commDataMap = commDataSendPosVel;
-   
       int offsetX = msg->x - thisIndex.x ;
       int offsetY = msg->y - thisIndex.y ;
       int offsetZ = msg->z - thisIndex.z ;
    
-      CommData cdata = commDataMap[{msg->x, msg->y, msg->z}];
-   
       if ( offsetZ != 0 && offsetX == 0 && offsetY == 0) {
          commSpace.fence(); // ensure packing kernels done before host read
-         auto h_send = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataSendView);
+         auto h_send = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cdata.buffer);
          int countPerField = cdata.size[0] * cdata.size[1];
          for (Index_t fi = 0; fi < 3 && fi < msg->xferFields; ++fi) {
-            int base = msg->offset + fi * countPerField;
+            int base = fi * countPerField;
             printf("[PACKED chare(%d,%d,%d)->(%d,%d,%d) fi=%d] base=%d countPerField=%d",
                thisIndex.x, thisIndex.y, thisIndex.z,
                msg->x, msg->y, msg->z,
@@ -738,18 +691,14 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
    os.clear();
    uint32_t msgType = REF_MSGTYPE(ref);
    CommDataMap_t* commDataMap;
-   Kokkos::View<Real_t*>* recvView;
    if (msgType == MSG_SYNC_POS_VEL) {
       commDataMap = &commDataRecvPosVel;
-      recvView = &locDom->commDataRecvViewPosVel;
    }
    else if (msgType == MSG_MONOQ) {
       commDataMap = &commDataRecvMonoQ;
-      recvView = &locDom->commDataRecvViewMonoQ;
    }
    else if (msgType == MSG_COMM_SBN) {
       commDataMap = &commDataRecvSBN;
-      recvView = &locDom->commDataRecvViewSBN;
    }
    else
       CkAbort("DomainChare::CommRecv: Unknown msgType") ;
@@ -759,16 +708,7 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
       CkAbort("DomainChare::CommRecv: Invalid comm data map key") ;
    }
 
-   Index_t maxPlaneComm = xferFields * locDom->maxPlaneSize() ;
-   Index_t maxEdgeComm  = xferFields * locDom->maxEdgeSize() ;
-
-   int pmsg = it->second.pmsg ;
-   int emsg = it->second.emsg ;
-   int cmsg = it->second.cmsg ;
-
-   int offset = pmsg * maxPlaneComm + emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL;
-
-   buf = recvView->data() + offset;
+   buf = it->second.buffer.data();
    post[0].hapi_stream = commStream;
    // std::ostringstream os;
    os<<" [end] CommRecv ";
@@ -780,8 +720,6 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
 
 void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize();
-   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize();
 
    Kokkos::View<Real_t*> fieldData[6];
    fieldData[0] = domain.m_x;
@@ -791,23 +729,17 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
    fieldData[4] = domain.m_yd;
    fieldData[5] = domain.m_zd;
 
-   int sx = x;
-   int sy = y;
-   int sz = z;
-
    CommData& cdata = commDataRecvPosVel[{x, y, z}];
    Index_t offsetX = x - thisIndex.x;
    Index_t offsetY = y - thisIndex.y;
    Index_t offsetZ = z - thisIndex.z;
 
-   int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
-
    if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
          offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
       for (Index_t fi = 0; fi < xferFields; ++fi) {
          Kokkos::View<Real_t*>& dest = fieldData[fi];
-         Copy2D(domain.commDataRecvViewPosVel,
-            offset + fi * cdata.size[0] * cdata.size[1],
+         Copy2D(cdata.buffer,
+            fi * cdata.size[0] * cdata.size[1],
             1, cdata.size[0],
             dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
             cdata.size[0], cdata.size[1], commSpace);
@@ -815,8 +747,8 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
    } else {
       for (Index_t fi = 0; fi < xferFields; ++fi) {
          Kokkos::View<Real_t*>& dest = fieldData[fi];
-         Copy1D(domain.commDataRecvViewPosVel,
-            offset + fi * cdata.size[0],
+         Copy1D(cdata.buffer,
+            fi * cdata.size[0],
             1,
             dest, cdata.offset, cdata.dst_stride[0],
             cdata.size[0], commSpace);
@@ -830,30 +762,26 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
    if (oz != 0 && ox == 0 && oy == 0) {
       // z-face: check if data at offset 0 in recvView is correct
       commSpace.fence();
-      auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataRecvViewPosVel);
-      CommData& cd = commDataRecvPosVel[{x, y, z}];
-      int maxPlaneComm = xferFields * locDom->maxPlaneSize();
-      int maxEdgeComm = xferFields * locDom->maxEdgeSize();
-      int off = cd.pmsg * maxPlaneComm + cd.emsg * maxEdgeComm + cd.cmsg * CACHE_COHERENCE_PAD_REAL;
-      int count = cd.size[0] * cd.size[1];
+      auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cdata.buffer);
+      int count = cdata.size[0] * cdata.size[1];
       int nzero = 0;
       for (int k = 0; k < count; ++k) {
-         if (h_recv(off + k) == 0.0 || h_recv(off + k) == -0.0) nzero++;
+         if (h_recv(k) == 0.0 || h_recv(k) == -0.0) nzero++;
       }
       if (nzero > count * 9 / 10) {
-         printf("[DMA-LAND ZERO chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
-            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
+         printf("[DMA-LAND ZERO chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d\n",
+            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count);
          for (int fi = 0; fi < 6 && fi < xferFields; ++fi) {
             printf("  fi=%d last5:", fi);
-            int base = off + fi * count;
+            int base = fi * count;
             for (int k = count - 5; k < count; ++k) {
                if (k >= 0) printf(" [%d]=%.10e", base + k, h_recv(base + k));
             }
             printf("\n");
          }
       } else {
-         printf("[DMA-LAND OK chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
-            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
+         printf("[DMA-LAND OK chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d\n",
+            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count);
       }
    }
    fflush(stdout);
@@ -863,12 +791,8 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
 
 void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   // commSpace.fence();
 
-   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
-   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
-
-   CommData cdata = commDataRecvMonoQ[{x, y, z}];
+   CommData& cdata = commDataRecvMonoQ[{x, y, z}];
    Index_t offsetX = x - thisIndex.x;
    Index_t offsetY = y - thisIndex.y;
    Index_t offsetZ = z - thisIndex.z;
@@ -882,41 +806,34 @@ void DomainChare::processRemoteQ(uint32_t ref, int x, int y, int z, int xferFiel
    fieldOffset[1] = domain.numElem() ;
    fieldOffset[2] = domain.numElem() ;
 
-   int offset = cdata.pmsg * maxPlaneComm;
-
    if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
          offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
       int copyLen = cdata.size[0] * cdata.size[1];
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> &dest = fieldData[fi] ;
-         int srcOff = offset + fi * copyLen;
-         int dstOff = fieldOffset[fi] + cdata.pmsg * copyLen;
-         Copy1D(domain.commDataRecvViewMonoQ, srcOff, 1,
+         int srcOff = fi * copyLen;
+         int dstOff = fieldOffset[fi] + cdata.ghostOffset * copyLen;
+         Copy1D(cdata.buffer, srcOff, 1,
             dest, dstOff, 1, copyLen, commSpace);
       }
    } else {
       int copyLen = cdata.size[0];
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> &dest = fieldData[fi];
-         int srcOff = offset + fi * copyLen;
-         int dstOff = fieldOffset[fi] + cdata.pmsg * copyLen;
-         Copy1D(domain.commDataRecvViewMonoQ, srcOff, 1,
+         int srcOff = fi * copyLen;
+         int dstOff = fieldOffset[fi] + cdata.ghostOffset * copyLen;
+         Copy1D(cdata.buffer, srcOff, 1,
             dest, dstOff, 1, copyLen, commSpace);
       }
    }
-   // commSpace.fence();
 }
 
 /******************************************/
 
 void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
    Domain& domain = *locDom;
-   // commSpace.fence();
 
-   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
-   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
-
-   CommData cdata = commDataRecvSBN[{x, y, z}];
+   CommData& cdata = commDataRecvSBN[{x, y, z}];
    Index_t offsetX = x - thisIndex.x;
    Index_t offsetY = y - thisIndex.y;
    Index_t offsetZ = z - thisIndex.z;
@@ -924,14 +841,12 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
    Kokkos::View<Real_t*> fieldData[1];
    fieldData[0] = domain.m_nodalMass;
 
-   int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
-
    if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
          offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add2D(domain.commDataRecvViewSBN,
-               offset + fi * cdata.size[0] * cdata.size[1],
+         Add2D(cdata.buffer,
+               fi * cdata.size[0] * cdata.size[1],
                1, cdata.size[0],
                dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
                cdata.size[0], cdata.size[1], commSpace);
@@ -939,14 +854,13 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
    } else {
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> dest = fieldData[fi] ;
-         Add1D(domain.commDataRecvViewSBN,
-               offset + fi * cdata.size[0],
+         Add1D(cdata.buffer,
+               fi * cdata.size[0],
                1,
                dest, cdata.offset, cdata.dst_stride[0],
                cdata.size[0], commSpace);
       }
    }
-   // commSpace.fence();
 }
 
 /******************************************/
@@ -954,10 +868,7 @@ void DomainChare::processRemoteMass(uint32_t ref, int x, int y, int z, int xferF
 void DomainChare::processRemoteForce(uint32_t ref, int x, int y, int z, int xferFields, int size, Real_t* buf) {
       Domain& domain = *locDom;
 
-   Index_t maxPlaneComm = xferFields * domain.maxPlaneSize() ;
-   Index_t maxEdgeComm  = xferFields * domain.maxEdgeSize() ;
-
-   CommData cdata = commDataRecvSBN[{x, y, z}];
+   CommData& cdata = commDataRecvSBN[{x, y, z}];
    Index_t offsetX = x - thisIndex.x;
    Index_t offsetY = y - thisIndex.y;
    Index_t offsetZ = z - thisIndex.z;
@@ -967,34 +878,22 @@ void DomainChare::processRemoteForce(uint32_t ref, int x, int y, int z, int xfer
    fieldData[1] = domain.m_fy;
    fieldData[2] = domain.m_fz;
 
-   int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
-
    if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) || 
          offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> &dest = fieldData[fi] ;
-         Add2D(domain.commDataRecvView, offset + fi * cdata.size[0] * cdata.size[1],
+         Add2D(cdata.buffer, fi * cdata.size[0] * cdata.size[1],
                1, cdata.size[0],
                dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
                cdata.size[0], cdata.size[1], commSpace);
-         // Add2D(dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
-         //       domain.commDataRecvView, 
-         //       offset + fi * cdata.size[0] * cdata.size[1],
-         //       cdata.src_stride[0], cdata.src_stride[1],
-         //       cdata.size[0], cdata.size[1], commSpace);
       }
    } else {
       for (Index_t fi=0 ; fi<xferFields; ++fi) {
          Kokkos::View<Real_t*> &dest = fieldData[fi] ;
-         Add1D(domain.commDataRecvView, offset + fi * cdata.size[0],
+         Add1D(cdata.buffer, fi * cdata.size[0],
                1,
                dest, cdata.offset, cdata.dst_stride[0],
                cdata.size[0], commSpace);
-         // Add1D(dest, cdata.offset, cdata.dst_stride[0],
-         //       domain.commDataRecvView, 
-         //       offset + fi * cdata.size[0],
-         //       cdata.src_stride[0],
-         //       cdata.size[0], commSpace);
       }
    }
 }

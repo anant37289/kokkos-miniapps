@@ -444,48 +444,7 @@ Domain::SetupCommBuffers(Int_t edgeNodes)
   m_planeMin = (m_planeLoc == 0)    ? 0 : 1;
   m_planeMax = (m_planeLoc == m_tp-1) ? 0 : 1;
 
-  // account for face communication 
-  Index_t comBufSize =
-    (m_rowMin + m_rowMax + m_colMin + m_colMax + m_planeMin + m_planeMax) *
-    m_maxPlaneSize * MAX_FIELDS_PER_MPI_COMM ;
-
-  // account for edge communication 
-  comBufSize +=
-    ((m_rowMin & m_colMin) + (m_rowMin & m_planeMin) + (m_colMin & m_planeMin) +
-     (m_rowMax & m_colMax) + (m_rowMax & m_planeMax) + (m_colMax & m_planeMax) +
-     (m_rowMax & m_colMin) + (m_rowMin & m_planeMax) + (m_colMin & m_planeMax) +
-     (m_rowMin & m_colMax) + (m_rowMax & m_planeMin) + (m_colMax & m_planeMin)) *
-    m_maxEdgeSize * MAX_FIELDS_PER_MPI_COMM ;
-
-  // account for corner communication 
-  // factor of 16 is so each buffer has its own cache line 
-  comBufSize += ((m_rowMin & m_colMin & m_planeMin) +
-		 (m_rowMin & m_colMin & m_planeMax) +
-		 (m_rowMin & m_colMax & m_planeMin) +
-		 (m_rowMin & m_colMax & m_planeMax) +
-		 (m_rowMax & m_colMin & m_planeMin) +
-		 (m_rowMax & m_colMin & m_planeMax) +
-		 (m_rowMax & m_colMax & m_planeMin) +
-		 (m_rowMax & m_colMax & m_planeMax)) * MAX_FIELDS_PER_MPI_COMM * CACHE_COHERENCE_PAD_REAL ;
-
-  //this->commDataSend = Allocate<Real_t>(comBufSize) ;
-  //this->commDataRecv = Allocate<Real_t>(comBufSize) ;
-
-  Kokkos::resize(this->commDataSendView, comBufSize);
-  Kokkos::resize(this->commDataRecvView, comBufSize);
-  Kokkos::resize(this->commDataRecvViewSBN, comBufSize);
-  Kokkos::resize(this->commDataRecvViewPosVel, comBufSize);
-  Kokkos::resize(this->commDataRecvViewMonoQ, comBufSize);
-
-  Kokkos::deep_copy(this->commDataSendView, 0);
-  Kokkos::deep_copy(this->commDataRecvView, 0);
-  Kokkos::deep_copy(this->commDataRecvViewSBN, 0);
-  Kokkos::deep_copy(this->commDataRecvViewPosVel, 0);
-  Kokkos::deep_copy(this->commDataRecvViewMonoQ, 0);
-
-  // prevent floating point exceptions 
-  //memset(this->commDataSend, 0, comBufSize*sizeof(Real_t)) ;
-  //memset(this->commDataRecv, 0, comBufSize*sizeof(Real_t)) ;
+  // Per-neighbor buffers are now allocated in CommDataSendInit/CommDataRecvInit
 
   // Boundary nodesets
   if (m_colLoc == 0)
