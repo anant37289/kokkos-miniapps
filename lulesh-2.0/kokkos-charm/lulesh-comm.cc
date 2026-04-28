@@ -556,8 +556,8 @@ void DomainChare::CommSend(Domain& domain, int msgType,
 
    CommDataMapIter_t it;
 
-   DBG_PRINTF("[DEBUG CommSend] (%d,%d,%d) iter=%u msgType=0x%x xferFields=%d commDataMap.size()=%lu\n",
-      thisIndex.x, thisIndex.y, thisIndex.z, iter, msgType, xferFields, (unsigned long)commDataMap.size());
+   // DBG_PRINTF("[DEBUG CommSend] (%d,%d,%d) iter=%u msgType=0x%x xferFields=%d commDataMap.size()=%lu\n",
+   //    thisIndex.x, thisIndex.y, thisIndex.z, iter, msgType, xferFields, (unsigned long)commDataMap.size());
 
    if (commDataMap.size() == 0) {
       if (msgType == MSG_SYNC_POS_VEL) {
@@ -570,6 +570,8 @@ void DomainChare::CommSend(Domain& domain, int msgType,
          thisProxy[thisIndex].SBNSendDone();
       }
    }
+
+   std::string debug_string = "";
 
    for (it = commDataMap.begin(); it != commDataMap.end(); ++it) {
       std::tuple<int, int, int> idx = it->first ;
@@ -589,6 +591,32 @@ void DomainChare::CommSend(Domain& domain, int msgType,
                    offset + fi * cdata.size[0] * cdata.size[1], 
                    cdata.dst_stride[0], cdata.dst_stride[1], 
                    cdata.size[0], cdata.size[1], commSpace);//TODO:: sync.use event for correctness, i think work has been on computeSpace before this(current this is okay as they are the same)
+
+         if(false && thisIndex.x==1 && thisIndex.y==0 && thisIndex.z==0 && msgType == MSG_SYNC_POS_VEL && std::get<0>(idx)==0 && std::get<1>(idx)==0 && std::get<2>(idx)==0) {
+            commSpace.fence();
+            if(fi==0||fi==1)
+            {
+               for(int i=0;i<cdata.size[0]; ++i){
+                  for(int j=0;j<cdata.size[1];j++){
+                     auto h_src = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), src);
+                     int dst_idx = offset + fi * cdata.size[0] * cdata.size[1] + j*cdata.dst_stride[1] + i*cdata.dst_stride[0];
+                     int src_idx = cdata.offset + j*cdata.src_stride[1] + i*cdata.src_stride[0];
+                     int offset_dst = dst_idx - offset;
+                     if(offset_dst==30||offset_dst==31||offset_dst==66||offset_dst==67){
+                        printf("dst_idx: %d, src_idx: %d, value: %f ,,,,,,,,,,,", dst_idx, src_idx, h_src[src_idx]);
+                     }
+                  }
+               }
+               auto h_send = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.commDataSendView);
+               //look at idx 30,31,66,67
+               printf("[1,0,0] copying into h_send:");
+               for(int i=0;i<xferFields * cdata.size[0] * cdata.size[1]; ++i) {
+                  if(i==30||i==31||i==66||i==67)
+                     printf(",,,,,,,,,, %d: %f ",i, h_send[offset + i]);
+               }
+               printf("\n");
+            }
+         }
          }
       } else {
          for (Index_t fi=0 ; fi<xferFields; ++fi) {
@@ -597,6 +625,29 @@ void DomainChare::CommSend(Domain& domain, int msgType,
                    domain.commDataSendView, 
                    offset + fi * cdata.size[0], 
                    cdata.dst_stride[0], cdata.size[0], commSpace);
+                   if(false && thisIndex.x==1 && thisIndex.y==0 && thisIndex.z==0 && msgType == MSG_SYNC_POS_VEL && std::get<0>(idx)==0 && std::get<1>(idx)==0 && std::get<2>(idx)==0) {
+                      commSpace.fence();
+                      if(fi==0||fi==1)
+                      {
+                        for(int i=0;i<cdata.size[0]; ++i){
+                           auto h_src = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), src);
+                           int dst_idx = offset + fi * cdata.size[0] + i*cdata.dst_stride[0];
+                           int src_idx = cdata.offset + i*cdata.src_stride[0];
+                           int offset_dst = dst_idx - offset;
+                           if(offset_dst==30||offset_dst==31||offset_dst==66||offset_dst==67){
+                              printf("dst_idx: %d, src_idx: %d, value: %f ,,,,,,,, ", dst_idx, src_idx, h_src[src_idx]);
+                           }
+                        }
+                         auto h_send = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.commDataSendView);
+                         //look at idx 30,31,66,67
+                         printf("[1,0,0] copying into h_send:");
+                         for(int i=0;i<xferFields * cdata.size[0] * cdata.size[1]; ++i) {
+                            if(i==30||i==31||i==66||i==67)
+                               printf(",,,,,,,,,, %d: %f ",i, h_send[offset + i]);
+                         }
+                         printf("\n");
+                      }
+                   }
          }
       }
 
@@ -627,13 +678,47 @@ void DomainChare::CommSend(Domain& domain, int msgType,
 
       Real_t* sendPtr = locDom->commDataSendView.data() + msg->offset;
 
+      if(false && thisIndex.x==0 && thisIndex.y==0 && thisIndex.z==1 && msgType == MSG_SYNC_POS_VEL && std::get<0>(idx)==1 && std::get<1>(idx)==0 && std::get<2>(idx)==0) {
+         commSpace.fence();
+         auto h_send = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.commDataSendView);
+         //look at idx 0,1,2,6,7,8
+         printf("[0,0,1] to [1,0,0]: ptr %p ", sendPtr);
+         for(int i=0;i<msg->sendCount; ++i) {
+            // if(i==0||i==1||i==2||i==6||i==7||i==8){
+               printf(" %f ", h_send[msg->offset + i]);
+               //print the corresponding source values as well
+            // }
+         }
+         printf("\n");
+      }
+
+         #if DEBUG_COMM
+       // Sender-side debug: print source field values at packed positions for PosVel z-face
+      // if(msg->msgType == MSG_SYNC_POS_VEL)
+      // {
+      //    auto commDataMap = commDataSendPosVel;
+      
+      //    CommData cdata = commDataMap[{msg->x, msg->y, msg->z}];
+      
+      //    if ( msg->x== 0 && msg->y== 0 && msg->z == 0) {
+      //       commSpace.fence(); // ensure packing kernels done before host read
+      //       auto h_send = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataSendView);
+      //       printf(" [Send to (0,0,0) from (%d,%d,%d)]: ", thisIndex.x, thisIndex.y, thisIndex.z);
+      //       for(int i=0; i<msg->sendCount; ++i) {
+      //          printf("%f ", h_send[msg->offset + i]);
+      //       }
+      //       printf("\n");
+      //    }
+      // }
+      #endif
+
       thisProxy(msg->x, msg->y, msg->z).CommRecv(ref, thisIndex.x, thisIndex.y, thisIndex.z, 
       msg->xferFields, msg->sendCount, CkDeviceBuffer(sendPtr, *cb, commStream));
       
-      DBG_PRINTF("[DEBUG CommSend packing] (%d,%d,%d)->(%d,%d,%d) iter=%u msgType=0x%x xferFields=%d sendCount=%d offset=%d\n",
-         thisIndex.x, thisIndex.y, thisIndex.z,
-         std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
-         iter, msgType, xferFields, sendCount, offset);
+      // DBG_PRINTF("[DEBUG CommSend packing] (%d,%d,%d)->(%d,%d,%d) iter=%u msgType=0x%x xferFields=%d sendCount=%d offset=%d\n",
+      //    thisIndex.x, thisIndex.y, thisIndex.z,
+      //    std::get<0>(idx), std::get<1>(idx), std::get<2>(idx),
+      //    iter, msgType, xferFields, sendCount, offset);
 
       // hapiAddCallback(commStream, cb, msg);
    }
@@ -683,44 +768,6 @@ void DomainChare::packingDone(PackingDoneMsg* msg) {
 
    Real_t* sendPtr = locDom->commDataSendView.data() + msg->offset;
 
-   #if DEBUG_COMM
-   // Sender-side debug: print source field values at packed positions for PosVel z-face
-   if(msg->msgType == MSG_SYNC_POS_VEL)
-   {
-      auto commDataMap = commDataSendPosVel;
-   
-      int offsetX = msg->x - thisIndex.x ;
-      int offsetY = msg->y - thisIndex.y ;
-      int offsetZ = msg->z - thisIndex.z ;
-   
-      CommData cdata = commDataMap[{msg->x, msg->y, msg->z}];
-   
-      if ( offsetZ != 0 && offsetX == 0 && offsetY == 0) {
-         commSpace.fence(); // ensure packing kernels done before host read
-         auto h_send = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataSendView);
-         int countPerField = cdata.size[0] * cdata.size[1];
-         for (Index_t fi = 0; fi < 3 && fi < msg->xferFields; ++fi) {
-            int base = msg->offset + fi * countPerField;
-            printf("[PACKED chare(%d,%d,%d)->(%d,%d,%d) fi=%d] base=%d countPerField=%d",
-               thisIndex.x, thisIndex.y, thisIndex.z,
-               msg->x, msg->y, msg->z,
-               fi, base, countPerField);
-            // count zeros
-            int nzero = 0;
-            for (int k = 0; k < countPerField; ++k) {
-               if (h_send(base + k) == 0.0 || h_send(base + k) == -0.0) nzero++;
-            }
-            printf(" zeros=%d/%d", nzero, countPerField);
-            printf(" | last5:");
-            for (int k = countPerField - 5; k < countPerField; ++k) {
-               if (k >= 0) printf(" [%d]=%.10e", base + k, h_send(base + k));
-            }
-            printf("\n");
-         }
-      }
-   }
-   #endif
-
    thisProxy(msg->x, msg->y, msg->z).CommRecv(ref, thisIndex.x, thisIndex.y, thisIndex.z, 
       msg->xferFields, msg->sendCount, CkDeviceBuffer(sendPtr, *cb, commStream));
    // std::ostringstream os;
@@ -738,18 +785,18 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
    os.clear();
    uint32_t msgType = REF_MSGTYPE(ref);
    CommDataMap_t* commDataMap;
-   Kokkos::View<Real_t*>* recvView;
+   Kokkos::View<Real_t*> recvView;
    if (msgType == MSG_SYNC_POS_VEL) {
       commDataMap = &commDataRecvPosVel;
-      recvView = &locDom->commDataRecvViewPosVel;
+      recvView = locDom->commDataRecvViewPosVel;
    }
    else if (msgType == MSG_MONOQ) {
       commDataMap = &commDataRecvMonoQ;
-      recvView = &locDom->commDataRecvViewMonoQ;
+      recvView = locDom->commDataRecvViewMonoQ;
    }
    else if (msgType == MSG_COMM_SBN) {
       commDataMap = &commDataRecvSBN;
-      recvView = &locDom->commDataRecvViewSBN;
+      recvView = locDom->commDataRecvViewSBN;
    }
    else
       CkAbort("DomainChare::CommRecv: Unknown msgType") ;
@@ -767,8 +814,20 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
    int cmsg = it->second.cmsg ;
 
    int offset = pmsg * maxPlaneComm + emsg * maxEdgeComm + cmsg * CACHE_COHERENCE_PAD_REAL;
+   // if(flatIndex==1 && msgType == MSG_SYNC_POS_VEL)
+   // {
+      // auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), recvView);
+      // if(x==0 && y==0 && z==1){
+      // printf(" prise be ");
+      //    for(int i=0; i<36; ++i) {
+      //          printf(" %f ", h_recv[768 + i]);
+      //    }
+      // printf("\n");
+      // }
+      // printf(" [start] CommRecv at (%d,%d,%d) from (%d,%d,%d) with offset %d with size %d\n", thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, offset, size);
+   // }
 
-   buf = recvView->data() + offset;
+   buf = recvView.data() + offset;
    post[0].hapi_stream = commStream;
    // std::ostringstream os;
    os<<" [end] CommRecv ";
@@ -791,6 +850,12 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
    fieldData[4] = domain.m_yd;
    fieldData[5] = domain.m_zd;
 
+   Real_t* h_recv_buf;
+   cudaMallocHost(&h_recv_buf, size * sizeof(Real_t));
+   cudaMemcpy(h_recv_buf, buf, size * sizeof(Real_t), cudaMemcpyDeviceToHost);
+   cudaDeviceSynchronize();
+   auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.commDataRecvViewPosVel);
+
    int sx = x;
    int sy = y;
    int sz = z;
@@ -802,6 +867,15 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
 
    int offset = cdata.pmsg * maxPlaneComm + cdata.emsg * maxEdgeComm + cdata.cmsg * CACHE_COHERENCE_PAD_REAL;
 
+   if(false && flatIndex==1 && x==0 && y==0 && z==1)
+   {
+      printf("[1,0,0] from [0,0,1]: ptr %p ", domain.commDataRecvViewPosVel.data() + offset);
+      for(int i=0; i<size; ++i) {
+            printf(" %f ", h_recv[offset + i]);
+      }
+      printf("\n");
+   }
+
    if (((offsetX == -1 || offsetX == 1) && offsetY == 0 && offsetZ == 0) ||
          offsetX == 0 && ((offsetY == -1 || offsetY == 1) && offsetZ == 0)) {
       for (Index_t fi = 0; fi < xferFields; ++fi) {
@@ -811,6 +885,26 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
             1, cdata.size[0],
             dest, cdata.offset, cdata.dst_stride[0], cdata.dst_stride[1],
             cdata.size[0], cdata.size[1], commSpace);
+            if(false && flatIndex==1 && (fi==0 || fi==1))
+            {
+               for(int i=0;i<cdata.size[0];i++)
+                  for(int j=0;j<cdata.size[1];j++)
+               {
+                  int idx = cdata.offset + i * cdata.dst_stride[0] + j * cdata.dst_stride[1];
+                  if(idx==180 || idx==186 || idx==192)
+                  {
+                     Kokkos::fence();
+                     printf("[Copy2D dest idx %d from (%d,%d,%d)] from offset %d\n", idx, x, y, z, offset);
+                     //incoming values
+                     auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.commDataRecvViewPosVel);
+                     int srcIdx = offset + fi * cdata.size[0] * cdata.size[1] + i*1 + j*cdata.size[0];
+                     printf(" [copy2D copying into idx %d from srcIdx %d(value %.6f)]\n", idx, srcIdx - offset, h_recv[srcIdx]);
+                     //field values after copy2D
+                     auto h_dest = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), dest);
+                     printf(" [copy2D copied into idx %d value %.6f]\n", idx, h_dest[idx]);
+                  }
+               }
+            }
          }
    } else {
       for (Index_t fi = 0; fi < xferFields; ++fi) {
@@ -820,41 +914,50 @@ void DomainChare::processRemotePosVel(uint32_t ref, int x, int y, int z, int xfe
             1,
             dest, cdata.offset, cdata.dst_stride[0],
             cdata.size[0], commSpace);
+         if(false && flatIndex==1 && (fi==0 || fi==1))
+            for(int i=0; i<cdata.size[0]; ++i) {
+               int idx = cdata.offset + i * cdata.dst_stride[0];
+               if(idx==180 || idx==186 || idx==192)
+               {
+                  Kokkos::fence();
+                  printf("[Copy1D dest idx %d from (%d,%d,%d)] from offset %d\n", idx, x, y, z, offset);
+                  //incoming values
+                  auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.commDataRecvViewPosVel);
+                  int srcIdx = offset + fi * cdata.size[0] + i;
+                  printf(" [copy1D copying into idx %d from srcIdx %d(value %.6f)]\n", idx, srcIdx - offset, h_recv[srcIdx]);
+                  //field values after copy1D
+                  auto h_dest = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), dest);
+                  printf(" [copy1D copied into idx %d value %.6f]\n", idx, h_dest[idx]);
+               }
+            }
       }
    }
    #if DEBUG_COMM
-   // Diagnostic: check recv data immediately at DMA completion for z-face neighbors
-   int ox = x - thisIndex.x;
-   int oy = y - thisIndex.y;
-   int oz = z - thisIndex.z;
-   if (oz != 0 && ox == 0 && oy == 0) {
-      // z-face: check if data at offset 0 in recvView is correct
+   // Diagnostic: check recv buffer and domain field values after unpack, for flatIndex 0
+   if (false && flatIndex==1) {
       commSpace.fence();
-      auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataRecvViewPosVel);
-      CommData& cd = commDataRecvPosVel[{x, y, z}];
-      int maxPlaneComm = xferFields * locDom->maxPlaneSize();
-      int maxEdgeComm = xferFields * locDom->maxEdgeSize();
-      int off = cd.pmsg * maxPlaneComm + cd.emsg * maxEdgeComm + cd.cmsg * CACHE_COHERENCE_PAD_REAL;
-      int count = cd.size[0] * cd.size[1];
-      int nzero = 0;
-      for (int k = 0; k < count; ++k) {
-         if (h_recv(off + k) == 0.0 || h_recv(off + k) == -0.0) nzero++;
-      }
-      if (nzero > count * 9 / 10) {
-         printf("[DMA-LAND ZERO chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
-            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
-         for (int fi = 0; fi < 6 && fi < xferFields; ++fi) {
-            printf("  fi=%d last5:", fi);
-            int base = off + fi * count;
-            for (int k = count - 5; k < count; ++k) {
-               if (k >= 0) printf(" [%d]=%.10e", base + k, h_recv(base + k));
-            }
-            printf("\n");
-         }
-      } else {
-         printf("[DMA-LAND OK chare(%d,%d,%d) from(%d,%d,%d)] fi=0 has %d zeros out of %d (off=%d)\n",
-            thisIndex.x, thisIndex.y, thisIndex.z, x, y, z, nzero, count, off);
-      }
+      auto h_x = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_x);
+      auto h_y = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_y);
+      
+      //pick 180, 186, 192, 198, 204, 204, 210
+
+      printf("[180 from (%d,%d,%d)] x=%.6f y=%.6f\n", x, y, z, h_x[180], h_y[180]);
+      printf("[186 from (%d,%d,%d)] x=%.6f y=%.6f\n", x, y, z, h_x[186], h_y[186]);
+      printf("[192 from (%d,%d,%d)] x=%.6f y=%.6f\n", x, y, z, h_x[192], h_y[192]);
+      // auto h_recv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), locDom->commDataRecvViewPosVel);
+      // CommData& cd = commDataRecvPosVel[{x, y, z}];
+      // int maxPlaneComm = xferFields * locDom->maxPlaneSize();
+      // int maxEdgeComm = xferFields * locDom->maxEdgeSize();
+      // int off = cd.pmsg * maxPlaneComm + cd.emsg * maxEdgeComm + cd.cmsg * CACHE_COHERENCE_PAD_REAL;
+      // int count = size;
+      // printf("[RECV chare(%d,%d,%d) from(%d,%d,%d)] ",
+      //    thisIndex.x, thisIndex.y, thisIndex.z, x, y, z,
+      //    off, cd.offset, cd.dst_stride[0], count);
+      // for(int i=0;i<count;i++)
+      // {
+      //    printf("%.6f ",h_recv(off + i));
+      // }
+      // printf("\n");
    }
    #endif
 }

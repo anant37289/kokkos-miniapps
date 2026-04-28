@@ -1178,34 +1178,71 @@ void CalcKinematicsForElems(Domain &domain, Real_t deltaTime, Index_t numElem, E
   });)
 
   #if DEBUG_COMM
-  if(domain.flatIndex==0)
-   printf("numelem %d\n", numElem);
+  // if(domain.flatIndex==0)
+  //  printf("numelem %d\n", numElem);
   auto h_volume_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), volume_s);
   auto h_x_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), x_local_s);
   auto h_y_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), y_local_s);
   auto h_z_local_s = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), z_local_s);
+  auto h_nodelist = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), domain.m_nodelist);
   
-  if(domain.flatIndex==0)
+  if(false && domain.flatIndex==1)
   {
-    for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+    for(int i=0;i<h_volume_s.size();i++)
     {
-      printf("%.10e ", h_volume_s(i));
+        // printf("[%d] VolumeError2: %d, %.10e\n", CkMyPe(), i, h_volume_s(i));
+        for(int j = 0;j<8;j++)
+          printf("(%.10e, %.10e, %.10e) ", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
+        printf("\n");
+        if(i==100||i==105||i==115||i==120)
+      {        
+        //index of x/y/z in x bufs
+        for(int j=0;j<8;j++)
+        {
+          int gnode = h_nodelist(i, j);
+          printf("node %d:\n", gnode);
+        }
+        fflush(stderr);
+        fflush(stdout);
+        // CkAbort("VolumeError2 (%d) %.6f", i, h_volume_s(i));
+      }
     }
-    printf("\n");
   }
-
-  if(domain.flatIndex==0)
-  {
-    for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
-    {
-      for(int j = 0;j<8;j++)
-        printf("(%.10e, %.10e, %.10e) ", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
-      printf("\n");
-    }
-  }
-
   fflush(stderr);
   fflush(stdout);
+        // if(domain.flatIndex==0)
+  // {
+  //   for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+  //   {
+  //     for(int j = 0;j<8;j++)
+  //       printf("(%.10e, %.10e, %.10e) ", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
+  //     printf("\n");
+  //   }
+  // }
+
+
+  //   }
+  // }
+  // if(domain.flatIndex==0)
+  // {
+  //   for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+  //   {
+  //     printf("%.10e ", h_volume_s(i));
+  //   }
+  //   printf("\n");
+  // }
+
+  // if(domain.flatIndex==0)
+  // {
+  //   for(int i=h_volume_s.size()-3;i<h_volume_s.size();i++)
+  //   {
+  //     for(int j = 0;j<8;j++)
+  //       printf("(%.10e, %.10e, %.10e) ", h_x_local_s(i, j), h_y_local_s(i, j), h_z_local_s(i, j));
+  //     printf("\n");
+  //   }
+  // }
+
+  
   #endif
 
 }
@@ -1236,7 +1273,7 @@ static inline void CalcLagrangeElements(Domain &domain, ExecSpace execSpace) {
     },error);)
 
     if(error)
-     CkAbort("VolumeError3");
+     CkAbort("[%d] VolumeError3", domain.flatIndex);
 
     // domain.DeallocateStrains();
   }
@@ -2134,8 +2171,9 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
 
   //TODO: change
   // hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, -1));
-  hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamNonBlocking, 0));
+  hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, 0));
   computeStream = commStream;
+  printf("PE: %d for %d,%d,%d\n", CkMyPe(), thisIndex.x, thisIndex.y, thisIndex.z);
 
   // Use default execution space for both to simplify
   commSpace = ExecSpace(commStream);
