@@ -128,6 +128,8 @@ mainmodule lulesh {
 
         entry void run() {
             serial "TimeStepCalculation" {
+                if(flatIndex==0)
+                    printf("running iter %d\n", iter);
                 if (locDom->cycle() == 0) {
                     startTime = CkWallTimer();
                 }
@@ -256,7 +258,7 @@ mainmodule lulesh {
                     fieldData[1] = domain.m_delv_eta;
                     fieldData[2] = domain.m_delv_zeta;
                     
-                    printf("SENDING Q\n");
+                    //printf("SENDING Q\n");
                     fflush(stdout);
                     CommSend(domain, MSG_MONOQ, 3, fieldData, domain.sizeX(), domain.sizeY(),
                             domain.sizeZ(), true, true, commDataSendMonoQ);
