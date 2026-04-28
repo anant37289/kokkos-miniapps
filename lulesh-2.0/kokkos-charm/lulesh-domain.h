@@ -339,6 +339,32 @@ public:
     }
   }
 
+  size_t getAllocSize(){
+    //buffer buffer_size*sizeof(Real_t)
+    //row_map numReg()+1*sizeof(Index_t)
+    //entries numElem()*sizeof(Index_t)
+    //Node persistent m_x..m_nodalMass numNode()*sizeof(Real_t)
+    //Elem persistent m_nodelist..m_vnew numElem()*___
+    //AllocateCalcVolumeForceBuffer sigxx.. determ  numElem()*___
+    //SetupCommBuffers comBufSize*___
+    //AllocateVnewc
+    //AllocateStrains
+    //AllocateGradients
+    //m_nodeElemStart & m_nodeElemCornerList
+
+    return buffer_size*sizeof(Real_t)+\
+    (numReg()+1)*sizeof(Index_t)+\
+    (numElem()+1)*sizeof(Index_t)+\
+    13*(numNode())*sizeof(Real_t)+\
+    (numElem()*8 + 6*numElem())*sizeof(Index_t) + numElem()*sizeof(Int_t) + 13*numElem()*sizeof(Real_t)+\
+    4*numElem()*sizeof(Real_t)+\
+    5*comBufSize*sizeof(Real_t)+(m_symmX.size()+m_symmY.size()+m_symmZ.size())*sizeof(Index_t)+\
+    numElem()*sizeof(Real_t)+\
+    3*numElem()*sizeof(Real_t)+\
+    3*numElem()*sizeof(Real_t)+3*(m_delv_xi.size())*sizeof(Real_t)+\
+    ((numNode()+1) + m_nodeElemCornerList.size())*sizeof(Index_t);
+  }
+
   void DeallocateGradients() {
     m_delx_zeta = Kokkos::View<Real_t*>();
     m_delx_eta = Kokkos::View<Real_t*>();
@@ -730,7 +756,7 @@ public:
     */
     p| flatIndex;
 
-    //NOTE: the sizer is 0 for p.isPackign need to use p.isUnpacking
+    //NOTE: the sizer is 0 for p.isPacking need to use p.isUnpacking
     if(!p.isUnpacking())
       m_nodeElemCornerListSize = m_nodeElemCornerList.size();
     p| m_nodeElemCornerListSize;
@@ -997,6 +1023,8 @@ public:
 
   Index_t m_maxPlaneSize;
   Index_t m_maxEdgeSize;
+
+  Index_t comBufSize;
 
   // OMP hack
   Kokkos::View<Index_t*> m_nodeElemStart;

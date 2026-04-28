@@ -193,7 +193,7 @@ Domain::Domain(Int_t numRanks, Index_t colLoc,
    m_sizeZ = edgeElems ;
    m_numElem = edgeElems*edgeElems*edgeElems ;
 
-   printf("[%d] numElem %d\n", flatIndex, m_numElem);
+  //  printf("[%d] numElem %d\n", flatIndex, m_numElem);
 
    m_numNode = edgeNodes*edgeNodes*edgeNodes ;
 
@@ -463,7 +463,7 @@ Domain::SetupCommBuffers(Int_t edgeNodes)
   m_planeMax = (m_planeLoc == m_tp-1) ? 0 : 1;
 
   // account for face communication 
-  Index_t comBufSize =
+  comBufSize =
     (m_rowMin + m_rowMax + m_colMin + m_colMax + m_planeMin + m_planeMax) *
     m_maxPlaneSize * MAX_FIELDS_PER_MPI_COMM ;
 
@@ -535,8 +535,8 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
    // Fill out the regNumList with material numbers, which are always
    // the region index plus one 
    if(numReg() == 1) {
-      printf("[%d] here\n", flatIndex);
-      fflush(stdout);
+      // printf("[%d] here\n", flatIndex);
+      //  fflush(stdout);
       while (nextIndex < numElem()) {
 	 this->regNumList(nextIndex) = 1;
          nextIndex++;
@@ -617,13 +617,13 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
    // Second, allocate each region index set
    h_row_map(0) = 0;
 
-   printf("[%d]=====Reg Elem Size====\n", flatIndex);
-   for(Index_t i=0 ; i<numReg() ; ++i)
-   {
-    printf("%d ", regElemSize(i));
-   }
-   printf("\n");
-   fflush(stdout);
+  //  printf("[%d]=====Reg Elem Size====\n", flatIndex);
+  //  for(Index_t i=0 ; i<numReg() ; ++i)
+  //  {
+  //   printf("%d ", regElemSize(i));
+  //  }
+  //  printf("\n");
+  //  fflush(stdout);
 
    for (Index_t i=0 ; i<numReg() ; ++i) {
       h_row_map(i+1) = h_row_map(i) + regElemSize(i);

@@ -75,6 +75,10 @@ mainmodule lulesh {
         entry void callAtSync()
         {
             serial {
+                //deposit user data
+                
+                // void *data = getObjUserData(CkpvAccess(_lb_obj_index)); 
+                // *(size_t*)data = locDom->getAllocSize();
                 AtSync();
             }
         }
@@ -110,8 +114,8 @@ mainmodule lulesh {
 
                     recvRef = MAKE_REF(MSG_COMM_SBN, iter);
                     commNbrs = commDataRecvSBN.size();
-                    DBG_LITE("[%d,%d,%d] init SBN iter=%u ref=0x%x\n",
-                        thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
+                    //DBG_LITE("[%d,%d,%d] init SBN iter=%u ref=0x%x\n",
+                      //  thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
                 }
             }
 
@@ -131,8 +135,8 @@ mainmodule lulesh {
                     // misdelivery when timing varies across GPUs.
                     iter++;
 
-                    DBG_LITE("[%d,%d,%d] init DONE iter=%u\n",
-                        thisIndex.x, thisIndex.y, thisIndex.z, iter);
+                    //DBG_LITE("[%d,%d,%d] init DONE iter=%u\n",
+                    //     thisIndex.x, thisIndex.y, thisIndex.z, iter);
                     CkCallback cb(CkIndex_Main::initDone(), mainProxy);
                     contribute(cb);
                 }
@@ -140,6 +144,7 @@ mainmodule lulesh {
         };
 
         entry void packingDone(PackingDoneMsg* msg);
+
         
         entry [reductiontarget] void TimeStepUpdate(Real_t newdt);
 
@@ -156,9 +161,9 @@ mainmodule lulesh {
 
         entry void run() {
             serial "TimeStepCalculation" {
-                if(flatIndex==0)
+                if(flatIndex==1)
                 {
-                    printf("running cycle %d\n", locDom->cycle());
+                    //printf("running cycle %d\n", locDom->cycle());
                     fflush(stdout);
                 }
                 if (locDom->cycle() == 0) {
@@ -197,8 +202,8 @@ mainmodule lulesh {
                 
                 recvRef = MAKE_REF(MSG_COMM_SBN, iter);
                 commNbrs = commDataRecvSBN.size();
-                DBG_LITE("[%d,%d,%d] SBN iter=%u ref=0x%x\n",
-                    thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
+                //DBG_LITE("[%d,%d,%d] SBN iter=%u ref=0x%x\n",
+                 //   thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
             }
 
             for (remoteCount = 0; remoteCount < commNbrs; remoteCount++) {
@@ -246,8 +251,8 @@ mainmodule lulesh {
 
                     recvRef = MAKE_REF(MSG_SYNC_POS_VEL, iter);
                     commNbrs = commDataRecvPosVel.size();
-                    DBG_LITE("[%d,%d,%d] PosVel iter=%u ref=0x%x\n",
-                        thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
+                    //DBG_LITE("[%d,%d,%d] PosVel iter=%u ref=0x%x\n",
+                     //   thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
                 }
             }
 
@@ -261,8 +266,6 @@ mainmodule lulesh {
             }
 
             serial "AfterPosVelRecv" {
-                //applyBufferedPosVel();
-                // Kokkos::fence();
             }
 
             serial "LagrangeElements" {
@@ -286,8 +289,8 @@ mainmodule lulesh {
 
                     recvRef = MAKE_REF(MSG_MONOQ, iter);
                     commNbrs = commDataRecvMonoQ.size();
-                    DBG_LITE("[%d,%d,%d] MonoQ iter=%u ref=0x%x\n",
-                        thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
+                    //DBG_LITE("[%d,%d,%d] MonoQ iter=%u ref=0x%x\n",
+                      //  thisIndex.x, thisIndex.y, thisIndex.z, iter, recvRef);
                 }
             }
 
@@ -325,8 +328,8 @@ mainmodule lulesh {
                     PrintState(*locDom, flatIndex);
 
                 iter++;
-                DBG_LITE("[%d,%d,%d] DONE iter=%u\n",
-                    thisIndex.x, thisIndex.y, thisIndex.z, iter);
+                //DBG_LITE("[%d,%d,%d] DONE iter=%u\n",
+                //    thisIndex.x, thisIndex.y, thisIndex.z, iter);
             }
 
             when MonoQSendDone() {
@@ -340,7 +343,12 @@ mainmodule lulesh {
                             contribute(cb_start);
                         }
                         else
+                        {
+                            Kokkos::deep_copy(locDom->commDataRecvViewPosVel, 0.0);
+                            Kokkos::deep_copy(locDom->commDataRecvViewMonoQ, 0.0);
+                            Kokkos::deep_copy(locDom->commDataRecvViewSBN, 0.0);
                             thisProxy[thisIndex].run();
+                        }
                     } else {
                         if (thisIndex.x == 0 && thisIndex.y == 0 && thisIndex.z == 0) {
                             Real_t elapsed_time = CkWallTimer() - startTime;

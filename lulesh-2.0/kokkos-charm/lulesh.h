@@ -1,8 +1,8 @@
 #ifndef LULESH_H
 #define LULESH_H
 
-#define DEBUG_COMM 0     // verbose per-message prints (changes timing!)
-#define DEBUG_COMM_LITE 0  // lightweight phase-transition prints only
+#define DEBUG_COMM 1     // verbose per-message prints (changes timing!)
+#define DEBUG_COMM_LITE 1  // lightweight phase-transition prints only
 #if DEBUG_COMM
 #define DBG_PRINTF(...) CkPrintf(__VA_ARGS__)
 #else
@@ -27,6 +27,7 @@
 #include "hapi_nvtx.h"
 
 extern CProxy_Main mainProxy;
+CkpvExtern(int, _lb_obj_index);
 
 struct TupleHash {
     template <class T1, class T2, class T3>
