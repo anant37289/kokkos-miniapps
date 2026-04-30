@@ -2141,7 +2141,7 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
 
   //TODO: change
   // hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, -1));
-  hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamNonBlocking, 0));
+  hapiCheck(hapiStreamCreateWithPriority(&commStream, hapiStreamNonBlocking, 0));
   computeStream = commStream;
 
   // Use default execution space for both to simplify
