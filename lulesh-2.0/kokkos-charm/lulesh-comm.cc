@@ -663,7 +663,7 @@ void DomainChare::SBNSendCallback() {
 void DomainChare::packingDone(PackingDoneMsg* msg) {
    std::ostringstream os;
    os<<" [start] packingDone ";
-   NVTXTracer(os.str(), NVTXColor::PeterRiver);
+   //NVTXTracer(os.str(), NVTXColor::PeterRiver);
    os.clear();
    uint32_t ref = MAKE_REF(msg->msgType, msg->sendIter);
    CkCallback* cb;
@@ -725,7 +725,7 @@ void DomainChare::packingDone(PackingDoneMsg* msg) {
       msg->xferFields, msg->sendCount, CkDeviceBuffer(sendPtr, *cb, commStream));
    // std::ostringstream os;
    os<<" [end] packingDone ";
-   NVTXTracer(os.str(), NVTXColor::PeterRiver);
+   //NVTXTracer(os.str(), NVTXColor::PeterRiver);
    os.clear();
 }
 
@@ -734,7 +734,7 @@ void DomainChare::packingDone(PackingDoneMsg* msg) {
 void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, int& size, Real_t* &buf, CkDeviceBufferPost* post) {
    std::ostringstream os;
    os<<" [start] CommRecv ";
-   NVTXTracer(os.str(), NVTXColor::PeterRiver);
+   //NVTXTracer(os.str(), NVTXColor::PeterRiver);
    os.clear();
    uint32_t msgType = REF_MSGTYPE(ref);
    CommDataMap_t* commDataMap;
@@ -772,7 +772,7 @@ void DomainChare::CommRecv(uint32_t ref, int x, int y, int z, int xferFields, in
    post[0].hapi_stream = commStream;
    // std::ostringstream os;
    os<<" [end] CommRecv ";
-   NVTXTracer(os.str(), NVTXColor::PeterRiver);
+   //NVTXTracer(os.str(), NVTXColor::PeterRiver);
    os.clear();
 }
 
