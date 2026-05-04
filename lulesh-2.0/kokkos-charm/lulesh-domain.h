@@ -148,31 +148,11 @@ public:
   //
 
 
-  Real_t* buffer;
-  size_t buffer_size;
-  size_t buffer_offset;
+  //
+  // ALLOCATION
+  //
 
-   void ResizeBuffer(const size_t size);
-   //  {
-   // buffer_offset = 0;
-   // if(size/sizeof(Real_t)+1 > buffer_size) {
-   //    buffer_size = size/sizeof(Real_t)+1;
-   //    Release<Real_t>(&buffer);
-   //    buffer = Allocate<Real_t>(buffer_size);
-   // }
-   // }
-
-   template<class Type>
-   Type* AllocateFromBuffer(const Index_t& count); 
-   
-   // {
-   // const Index_t offset = (count*sizeof(Type)+sizeof(Real_t)-1)/sizeof(Real_t);
-   // Real_t* ptr = buffer + buffer_offset;
-   // buffer_offset += ((offset+511)/512)*512;
-   // return static_cast<Type*>(ptr);
-   // }
-
-
+   // Removed raw buffer and ResizeBuffer methods, replaced with persistent views
 
   void AllocateNodePersistent(Int_t numNode) // Node-centered
   {
@@ -307,6 +287,37 @@ public:
         Kokkos::resize(sigyy, numElem);
         Kokkos::resize(sigzz, numElem);
         Kokkos::resize(determ, numElem);
+      }
+      Index_t numElem8 = numElem * 8;
+      if(m_fx_elem.size() != numElem8) {
+          Kokkos::resize(m_fx_elem, numElem8);
+          Kokkos::resize(m_fy_elem, numElem8);
+          Kokkos::resize(m_fz_elem, numElem8);
+          Kokkos::resize(m_dvdx, numElem, 8);
+          Kokkos::resize(m_dvdy, numElem, 8);
+          Kokkos::resize(m_dvdz, numElem, 8);
+          Kokkos::resize(m_x8n, numElem, 8);
+          Kokkos::resize(m_y8n, numElem, 8);
+          Kokkos::resize(m_z8n, numElem, 8);
+      }
+  }
+
+  void AllocateEvalEOSBuffer(Int_t numElem) {
+      if(m_e_old.size() != numElem) {
+          Kokkos::resize(m_e_old, numElem);
+          Kokkos::resize(m_delvc_eos, numElem);
+          Kokkos::resize(m_p_old, numElem);
+          Kokkos::resize(m_q_old, numElem);
+          Kokkos::resize(m_compression, numElem);
+          Kokkos::resize(m_compHalfStep, numElem);
+          Kokkos::resize(m_qq_old, numElem);
+          Kokkos::resize(m_ql_old, numElem);
+          Kokkos::resize(m_work, numElem);
+          Kokkos::resize(m_p_new, numElem);
+          Kokkos::resize(m_e_new, numElem);
+          Kokkos::resize(m_q_new, numElem);
+          Kokkos::resize(m_bvc, numElem);
+          Kokkos::resize(m_pbvc, numElem);
       }
   }
 
@@ -638,6 +649,32 @@ public:
   Kokkos::View<Real_t*> vnewc;
 
   // Element-centered
+
+  Kokkos::View<Real_t*> m_fx_elem;
+  Kokkos::View<Real_t*> m_fy_elem;
+  Kokkos::View<Real_t*> m_fz_elem;
+
+  Kokkos::View<Real_t**> m_dvdx;
+  Kokkos::View<Real_t**> m_dvdy;
+  Kokkos::View<Real_t**> m_dvdz;
+  Kokkos::View<Real_t**> m_x8n;
+  Kokkos::View<Real_t**> m_y8n;
+  Kokkos::View<Real_t**> m_z8n;
+
+  Kokkos::View<Real_t*> m_e_old;
+  Kokkos::View<Real_t*> m_delvc_eos;
+  Kokkos::View<Real_t*> m_p_old;
+  Kokkos::View<Real_t*> m_q_old;
+  Kokkos::View<Real_t*> m_compression;
+  Kokkos::View<Real_t*> m_compHalfStep;
+  Kokkos::View<Real_t*> m_qq_old;
+  Kokkos::View<Real_t*> m_ql_old;
+  Kokkos::View<Real_t*> m_work;
+  Kokkos::View<Real_t*> m_p_new;
+  Kokkos::View<Real_t*> m_e_new;
+  Kokkos::View<Real_t*> m_q_new;
+  Kokkos::View<Real_t*> m_bvc;
+  Kokkos::View<Real_t*> m_pbvc;
 
   // Region information
   Int_t m_numReg;

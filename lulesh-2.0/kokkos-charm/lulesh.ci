@@ -195,15 +195,6 @@ mainmodule lulesh {
                 CalcVelocityForNodes(domain, delt, u_cut, domain.numNode(), computeSpace);
 
                 CalcPositionForNodes(domain, delt, domain.numNode(), computeSpace);
-
-                //TODO:: check if a fence is needed here
-                /*
-                computeStream == commStream — they're the same CUDA stream (line 2040). The flow is:
-                CalcPositionForNodes launches kernels on computeSpace (= the shared stream) → writes m_x/y/z
-                SDAG yields → waits for SBNSendDone()
-                CommSend PosVel packs m_x/y/z/xd/yd/zd on commSpace (= the same stream)
-                Since both computeSpace and commSpace are the same CUDA stream, all kernels are serialized by CUDA stream ordering. The packing kernels in CommSend are guaranteed to execute after CalcPositionForNodes finishes — no fence required
-                */
             }
 
             when SBNSendDone() {
@@ -256,7 +247,7 @@ mainmodule lulesh {
                     fieldData[1] = domain.m_delv_eta;
                     fieldData[2] = domain.m_delv_zeta;
                     
-                    printf("SENDING Q\n");
+                    //printf("SENDING Q\n");
                     fflush(stdout);
                     CommSend(domain, MSG_MONOQ, 3, fieldData, domain.sizeX(), domain.sizeY(),
                             domain.sizeZ(), true, true, commDataSendMonoQ);
