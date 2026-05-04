@@ -22,6 +22,7 @@ void Domain::ResizeBuffer(const size_t size)
 {
    buffer_offset = 0;
    if(size/sizeof(Real_t)+1 > buffer_size) {
+      Kokkos::fence();
       buffer_size = size/sizeof(Real_t)+1;
       Release<Real_t>(&buffer);
       buffer = Allocate<Real_t>(buffer_size);
@@ -2141,7 +2142,7 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
 
   //TODO: change
   // hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, -1));
-  hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamNonBlocking, 0));
+  hapiCheck(hapiStreamCreateWithPriority(&commStream, hapiStreamNonBlocking, 0));
   computeStream = commStream;
 
   // Use default execution space for both to simplify
