@@ -148,31 +148,11 @@ public:
   //
 
 
-  Real_t* buffer;
-  size_t buffer_size;
-  size_t buffer_offset;
+  //
+  // ALLOCATION
+  //
 
-   void ResizeBuffer(const size_t size);
-   //  {
-   // buffer_offset = 0;
-   // if(size/sizeof(Real_t)+1 > buffer_size) {
-   //    buffer_size = size/sizeof(Real_t)+1;
-   //    Release<Real_t>(&buffer);
-   //    buffer = Allocate<Real_t>(buffer_size);
-   // }
-   // }
-
-   template<class Type>
-   Type* AllocateFromBuffer(const Index_t& count); 
-   
-   // {
-   // const Index_t offset = (count*sizeof(Type)+sizeof(Real_t)-1)/sizeof(Real_t);
-   // Real_t* ptr = buffer + buffer_offset;
-   // buffer_offset += ((offset+511)/512)*512;
-   // return static_cast<Type*>(ptr);
-   // }
-
-
+   // Removed raw buffer and ResizeBuffer methods, replaced with persistent views
 
   void AllocateNodePersistent(Int_t numNode) // Node-centered
   {
@@ -307,6 +287,37 @@ public:
         Kokkos::resize(sigyy, numElem);
         Kokkos::resize(sigzz, numElem);
         Kokkos::resize(determ, numElem);
+      }
+      Index_t numElem8 = numElem * 8;
+      if(m_fx_elem.size() != numElem8) {
+          Kokkos::resize(m_fx_elem, numElem8);
+          Kokkos::resize(m_fy_elem, numElem8);
+          Kokkos::resize(m_fz_elem, numElem8);
+          Kokkos::resize(m_dvdx, numElem, 8);
+          Kokkos::resize(m_dvdy, numElem, 8);
+          Kokkos::resize(m_dvdz, numElem, 8);
+          Kokkos::resize(m_x8n, numElem, 8);
+          Kokkos::resize(m_y8n, numElem, 8);
+          Kokkos::resize(m_z8n, numElem, 8);
+      }
+  }
+
+  void AllocateEvalEOSBuffer(Int_t numElem) {
+      if(m_e_old.size() != numElem) {
+          Kokkos::resize(m_e_old, numElem);
+          Kokkos::resize(m_delvc_eos, numElem);
+          Kokkos::resize(m_p_old, numElem);
+          Kokkos::resize(m_q_old, numElem);
+          Kokkos::resize(m_compression, numElem);
+          Kokkos::resize(m_compHalfStep, numElem);
+          Kokkos::resize(m_qq_old, numElem);
+          Kokkos::resize(m_ql_old, numElem);
+          Kokkos::resize(m_work, numElem);
+          Kokkos::resize(m_p_new, numElem);
+          Kokkos::resize(m_e_new, numElem);
+          Kokkos::resize(m_q_new, numElem);
+          Kokkos::resize(m_bvc, numElem);
+          Kokkos::resize(m_pbvc, numElem);
       }
   }
 
@@ -520,13 +531,7 @@ public:
     return &m_nodeElemCornerList[m_nodeElemStart[idx]];
   }
 
-  KOKKOS_INLINE_FUNCTION Real_t& commDataSend(Index_t idx) const {
-    return commDataSendView[idx];
-  }
 
-  KOKKOS_INLINE_FUNCTION  Real_t& commDataRecv(Index_t idx) const {
-    return commDataRecvView[idx];
-  }
 
   // Parameters
 
@@ -588,19 +593,6 @@ public:
   Index_t &maxPlaneSize() { return m_maxPlaneSize; }
   Index_t &maxEdgeSize() { return m_maxEdgeSize; }
 
-//
-// MPI-Related additional data
-//
-
-  // Communication Work space
-  //Real_t *commDataSend;
-  //Real_t *commDataRecv;
-
-  Kokkos::View<Real_t*> commDataSendView;
-  Kokkos::View<Real_t*> commDataRecvView;
-  Kokkos::View<Real_t*> commDataRecvViewSBN;
-  Kokkos::View<Real_t*> commDataRecvViewPosVel;
-  Kokkos::View<Real_t*> commDataRecvViewMonoQ;
 
   void BuildMesh(Int_t nx, Int_t edgeNodes, Int_t edgeElems);
   void SetupThreadSupportStructures();
@@ -657,6 +649,32 @@ public:
   Kokkos::View<Real_t*> vnewc;
 
   // Element-centered
+
+  Kokkos::View<Real_t*> m_fx_elem;
+  Kokkos::View<Real_t*> m_fy_elem;
+  Kokkos::View<Real_t*> m_fz_elem;
+
+  Kokkos::View<Real_t**> m_dvdx;
+  Kokkos::View<Real_t**> m_dvdy;
+  Kokkos::View<Real_t**> m_dvdz;
+  Kokkos::View<Real_t**> m_x8n;
+  Kokkos::View<Real_t**> m_y8n;
+  Kokkos::View<Real_t**> m_z8n;
+
+  Kokkos::View<Real_t*> m_e_old;
+  Kokkos::View<Real_t*> m_delvc_eos;
+  Kokkos::View<Real_t*> m_p_old;
+  Kokkos::View<Real_t*> m_q_old;
+  Kokkos::View<Real_t*> m_compression;
+  Kokkos::View<Real_t*> m_compHalfStep;
+  Kokkos::View<Real_t*> m_qq_old;
+  Kokkos::View<Real_t*> m_ql_old;
+  Kokkos::View<Real_t*> m_work;
+  Kokkos::View<Real_t*> m_p_new;
+  Kokkos::View<Real_t*> m_e_new;
+  Kokkos::View<Real_t*> m_q_new;
+  Kokkos::View<Real_t*> m_bvc;
+  Kokkos::View<Real_t*> m_pbvc;
 
   // Region information
   Int_t m_numReg;
@@ -790,12 +808,11 @@ typedef Real_t &(Domain::*Domain_member)(Index_t) const;
 
 class CommData {
 public:
-  CommData(int pmsg_, int emsg_, int cmsg_, int offset_,
+  CommData(int offset_,
            int src_stride_0, int src_stride_1,
            int dst_stride_0, int dst_stride_1,
            int size_0, int size_1)
-      : pmsg(pmsg_), emsg(emsg_), cmsg(cmsg_), 
-        offset(offset_) {
+      : offset(offset_), ghostOffset(0) {
     src_stride[0] = src_stride_0;
     src_stride[1] = src_stride_1;
     dst_stride[0] = dst_stride_0;
@@ -804,7 +821,7 @@ public:
     size[1] = size_1;
   }
 
-  CommData() : pmsg(0), emsg(0), cmsg(0), offset(0) {
+  CommData() : offset(0), ghostOffset(0) {
     src_stride[0] = 0;
     src_stride[1] = 0;
     dst_stride[0] = 0;
@@ -814,8 +831,7 @@ public:
   }
 
   CommData(const CommData& other) 
-      : pmsg(other.pmsg), emsg(other.emsg), cmsg(other.cmsg),
-        offset(other.offset) {
+      : offset(other.offset), ghostOffset(other.ghostOffset), buffer(other.buffer) {
     src_stride[0] = other.src_stride[0];
     src_stride[1] = other.src_stride[1];
     dst_stride[0] = other.dst_stride[0];
@@ -826,10 +842,9 @@ public:
 
   CommData& operator=(const CommData& other) {
     if (this != &other) {
-      pmsg = other.pmsg;
-      emsg = other.emsg;
-      cmsg = other.cmsg;
       offset = other.offset;
+      ghostOffset = other.ghostOffset;
+      buffer = other.buffer;
       src_stride[0] = other.src_stride[0];
       src_stride[1] = other.src_stride[1];
       dst_stride[0] = other.dst_stride[0];
@@ -841,10 +856,11 @@ public:
   }
 
   int offset;
+  int ghostOffset; // sequential index used for MonoQ ghost region destination
   int src_stride[2];
   int dst_stride[2];
   int size[2];
-  int pmsg, emsg, cmsg;
+  Kokkos::View<Real_t*> buffer;
 };
 
 struct cmdLineOpts {

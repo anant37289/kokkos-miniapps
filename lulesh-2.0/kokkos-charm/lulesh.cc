@@ -18,25 +18,6 @@
 /* readonly */ CProxy_DomainChare domainProxy;
 /* readonly */ int do_atomic;
 
-void Domain::ResizeBuffer(const size_t size)
-{
-   buffer_offset = 0;
-   if(size/sizeof(Real_t)+1 > buffer_size) {
-      buffer_size = size/sizeof(Real_t)+1;
-      Release<Real_t>(&buffer);
-      buffer = Allocate<Real_t>(buffer_size);
-   }
-   }
-
-  template<class Type>
-  Type* Domain::AllocateFromBuffer(const Index_t& count) 
-  {
-  const Index_t offset = (count*sizeof(Type)+sizeof(Real_t)-1)/sizeof(Real_t);
-  Real_t* ptr = buffer + buffer_offset;
-  buffer_offset += ((offset+511)/512)*512;
-  return static_cast<Type*>(ptr);
-  }
-
 void PrintState(Domain& locDom, int myRank) {
   Kokkos::fence();
   int N = locDom.numNode();
@@ -375,11 +356,9 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
                                            Real_t *sigyy, Real_t *sigzz,
                                            Real_t *determ, Index_t numElem,
                                            Index_t numNode, ExecSpace execSpace) {
-  Index_t numElem8 = numElem * 8;
-  // allocate device scratch views instead of unmanaged host/device buffers
-  Kokkos::View<Real_t*> fx_elem("fx_elem", numElem8);
-  Kokkos::View<Real_t*> fy_elem("fy_elem", numElem8);
-  Kokkos::View<Real_t*> fz_elem("fz_elem", numElem8);
+  Kokkos::View<Real_t*> fx_elem = domain.m_fx_elem;
+  Kokkos::View<Real_t*> fy_elem = domain.m_fy_elem;
+  Kokkos::View<Real_t*> fz_elem = domain.m_fz_elem;
 
   Kokkos::parallel_for("IntegrateStressForElems B", Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight), 
                        KOKKOS_LAMBDA(const int k) {
@@ -397,8 +376,8 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
     CalcElemNodeNormals(B[0], B[1], B[2], x_local, y_local, z_local);
 
     SumElemStressesToNodeForces(B, sigxx[k], sigyy[k], sigzz[k],
-                  fx_elem.data() + (k * 8), fy_elem.data() + (k * 8),
-                  fz_elem.data() + (k * 8));
+                                &fx_elem(k * 8), &fy_elem(k * 8),
+                                &fz_elem(k * 8));
   });
 
   int team_size = 1;
@@ -416,9 +395,9 @@ static inline void IntegrateStressForElems(Domain &domain, Real_t *sigxx,
          reduce_double3 f_tmp;
          Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(team,count),[&](const Index_t& i,reduce_double3& tmp) { //vectorized with ivdep
            Index_t elem = cornerList[i] ;
-           tmp.x += fx_elem[elem] ;
-           tmp.y += fy_elem[elem] ;
-           tmp.z += fz_elem[elem] ;
+           tmp.x += fx_elem(elem) ;
+           tmp.y += fy_elem(elem) ;
+           tmp.z += fz_elem(elem) ;
          },f_tmp);
          Kokkos::single(Kokkos::PerThread(team), [&] () {
            domain.fx(gnode) += f_tmp.x ;
@@ -544,18 +523,9 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
     const Kokkos::View<const Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > dvdz,
                                                 Real_t hourg, Index_t numElem,
                                                 Index_t numNode, ExecSpace execSpace) {
-  Index_t numElem8 = numElem * 8;
-
-  // temporary per-element storage (device views)
-  Kokkos::View<Real_t*> fx_elem;
-  Kokkos::View<Real_t*> fy_elem;
-  Kokkos::View<Real_t*> fz_elem;
-
-  if(do_atomic == 0) {
-    fx_elem = Kokkos::View<Real_t*>("fx_elem", numElem8);
-    fy_elem = Kokkos::View<Real_t*>("fy_elem", numElem8);
-    fz_elem = Kokkos::View<Real_t*>("fz_elem", numElem8);
-  }
+  Kokkos::View<Real_t*> fx_elem = domain.m_fx_elem;
+  Kokkos::View<Real_t*> fy_elem = domain.m_fy_elem;
+  Kokkos::View<Real_t*> fz_elem = domain.m_fz_elem;
 
   Gamma G;
 
@@ -625,7 +595,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
     CalcElemFBHourglassForce(xd1, hourgam, coefficient, hgfx);
 
     if (!do_atomic_dev) {
-      fx_local = fx_elem.data() + i3;
+      fx_local = &fx_elem(i3);
       fx_local[0] = hgfx[0];
       fx_local[1] = hgfx[1];
       fx_local[2] = hgfx[2];
@@ -657,7 +627,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
     CalcElemFBHourglassForce(xd1, hourgam, coefficient, hgfx);
 
     if (!do_atomic_dev) {
-      fy_local = fy_elem.data() + i3;
+      fy_local = &fy_elem(i3);
       fy_local[0] = hgfx[0];
       fy_local[1] = hgfx[1];
       fy_local[2] = hgfx[2];
@@ -689,7 +659,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
     CalcElemFBHourglassForce(xd1, hourgam, coefficient, hgfx);
 
     if (!do_atomic_dev) {
-      fz_local = fz_elem.data() + i3;
+      fz_local = &fz_elem(i3);
       fz_local[0] = hgfx[0];
       fz_local[1] = hgfx[1];
       fz_local[2] = hgfx[2];
@@ -734,9 +704,9 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
          reduce_double3 f_tmp;
          Kokkos::parallel_reduce(Kokkos::ThreadVectorRange(team,count),[&](const Index_t& i,reduce_double3& tmp) { //vectorized with ivdep
            Index_t elem = cornerList[i] ;
-           tmp.x += fx_elem[elem] ;
-           tmp.y += fy_elem[elem] ;
-           tmp.z += fz_elem[elem] ;
+           tmp.x += fx_elem(elem) ;
+           tmp.y += fy_elem(elem) ;
+           tmp.z += fz_elem(elem) ;
          },f_tmp);
          Kokkos::single(Kokkos::PerThread(team), [&] () {
            domain.fx(gnode) += f_tmp.x ;
@@ -756,23 +726,13 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
 static inline void CalcHourglassControlForElems(Domain &domain, Real_t determ[],
                                                 Real_t hgcoef, ExecSpace execSpace) {
   Index_t numElem = domain.numElem();
-  Index_t numElem8 = numElem * 8;
 
-  domain.ResizeBuffer((numElem8*sizeof(Real_t)+4096)*(do_atomic?6:9));
-
-  // allocate device scratch arrays (1D) and create unmanaged 2D views over them
-  Kokkos::View<Real_t*> dvdx_v("dvdx_v", numElem8);
-  Kokkos::View<Real_t*> dvdy_v("dvdy_v", numElem8);
-  Kokkos::View<Real_t*> dvdz_v("dvdz_v", numElem8);
-  Kokkos::View<Real_t*> x8n_v("x8n_v", numElem8);
-  Kokkos::View<Real_t*> y8n_v("y8n_v", numElem8);
-  Kokkos::View<Real_t*> z8n_v("z8n_v", numElem8);
-  Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_x8n(x8n_v.data(),numElem,8);
-  Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_y8n(y8n_v.data(),numElem,8);
-  Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_z8n(z8n_v.data(),numElem,8);
-  Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_dvdx(dvdx_v.data(),numElem,8);
-  Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_dvdy(dvdy_v.data(),numElem,8);
-  Kokkos::View<Real_t**,Kokkos::MemoryTraits<Kokkos::Unmanaged> > v_dvdz(dvdz_v.data(),numElem,8);
+  Kokkos::View<Real_t**> v_dvdx = domain.m_dvdx;
+  Kokkos::View<Real_t**> v_dvdy = domain.m_dvdy;
+  Kokkos::View<Real_t**> v_dvdz = domain.m_dvdz;
+  Kokkos::View<Real_t**> v_x8n = domain.m_x8n;
+  Kokkos::View<Real_t**> v_y8n = domain.m_y8n;
+  Kokkos::View<Real_t**> v_z8n = domain.m_z8n;
 
   int error = 0;
   // CalcHourglassControlForElems
@@ -1796,22 +1756,22 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
   Real_t emin = domain.emin();
   Real_t rho0 = domain.refdens();
 
-  domain.ResizeBuffer((numElemReg*sizeof(Real_t)+4096)*16);
+  domain.AllocateEvalEOSBuffer(domain.numElem());
 
-  Kokkos::View<Real_t*> e_old("e_old", numElemReg);
-  Kokkos::View<Real_t*> delvc("delvc", numElemReg);
-  Kokkos::View<Real_t*> p_old("p_old", numElemReg);
-  Kokkos::View<Real_t*> q_old("q_old", numElemReg);
-  Kokkos::View<Real_t*> compression("compression", numElemReg);
-  Kokkos::View<Real_t*> compHalfStep("compHalfStep", numElemReg);
-  Kokkos::View<Real_t*> qq_old("qq_old", numElemReg);
-  Kokkos::View<Real_t*> ql_old("ql_old", numElemReg);
-  Kokkos::View<Real_t*> work("work", numElemReg);
-  Kokkos::View<Real_t*> p_new("p_new", numElemReg);
-  Kokkos::View<Real_t*> e_new("e_new", numElemReg);
-  Kokkos::View<Real_t*> q_new("q_new", numElemReg);
-  Kokkos::View<Real_t*> bvc("bvc", numElemReg);
-  Kokkos::View<Real_t*> pbvc("pbvc", numElemReg);
+  Real_t *e_old = domain.m_e_old.data();
+  Real_t *delvc = domain.m_delvc_eos.data();
+  Real_t *p_old = domain.m_p_old.data();
+  Real_t *q_old = domain.m_q_old.data();
+  Real_t *compression = domain.m_compression.data();
+  Real_t *compHalfStep = domain.m_compHalfStep.data();
+  Real_t *qq_old = domain.m_qq_old.data();
+  Real_t *ql_old = domain.m_ql_old.data();
+  Real_t *work = domain.m_work.data();
+  Real_t *p_new = domain.m_p_new.data();
+  Real_t *e_new = domain.m_e_new.data();
+  Real_t *q_new = domain.m_q_new.data();
+  Real_t *bvc = domain.m_bvc.data();
+  Real_t *pbvc = domain.m_pbvc.data();
 
   // if(domain.flatIndex==0)
   //   printf("calling EvalEOSForElems for %d rep\n", rep);
@@ -1846,9 +1806,9 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
       work[i] = Real_t(0.);
     });
 
-    CalcEnergyForElems(p_new.data(), e_new.data(), q_new.data(), bvc.data(), pbvc.data(), p_old.data(), e_old.data(), q_old.data(),
-                       compression.data(), compHalfStep.data(), vnewc, work.data(), delvc.data(), pmin, p_cut,
-                       e_cut, q_cut, emin, qq_old.data(), ql_old.data(), rho0, eosvmax,
+    CalcEnergyForElems(p_new, e_new, q_new, bvc, pbvc, p_old, e_old, q_old,
+                       compression, compHalfStep, vnewc, work, delvc, pmin, p_cut,
+                       e_cut, q_cut, emin, qq_old, ql_old, rho0, eosvmax,
                        numElemReg, domain, r, execSpace);
   }
 
@@ -1860,7 +1820,7 @@ static inline void EvalEOSForElems(Domain &domain, Real_t *vnewc,
     domain.q(ielem) = q_new[i];
   });
 
-  CalcSoundSpeedForElems(domain, vnewc, rho0, e_new.data(), p_new.data(), pbvc.data(), bvc.data(), ss4o3,
+  CalcSoundSpeedForElems(domain, vnewc, rho0, e_new, p_new, pbvc, bvc, ss4o3,
                          numElemReg, r, execSpace);
 }
 
@@ -2138,8 +2098,8 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
   opts.do_atomic = do_atomic_;
 
   //TODO: change
-  // hapiCheck(cudaStreamCreateWithPriority(&commStream, cudaStreamDefault, -1));
-  hapiCheck(hapiStreamCreateWithPriority(&commStream, hapiStreamNonBlocking, 0));
+  // hapiCheck(hapiStreamCreateWithPriority(&commStream, hapiStreamDefault, -1));
+  hapiCheck(hapiStreamCreateWithPriority(&commStream, hapiStreamDefault, 0));
   computeStream = commStream;
 
   // Use default execution space for both to simplify
