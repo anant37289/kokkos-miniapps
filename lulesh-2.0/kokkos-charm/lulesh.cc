@@ -2024,6 +2024,7 @@ static inline void CalcTimeConstraintsForElems(Domain &domain, ExecSpace execSpa
 }
 
 Main::Main(CkArgMsg* m) {
+  CkPrintf("Running LULESH\n");
   mainProxy = thisProxy;
 
   Int_t numRanks;
