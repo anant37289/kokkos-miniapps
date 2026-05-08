@@ -18,6 +18,7 @@ option(Charm_ENABLE_GPU "Build LULESH with Charm++/Kokkos GPU backend" ON)
 
 set(Kokkos_ROOT ${KOKKOS_DIR})
 find_package(Kokkos 4.2 REQUIRED CONFIG)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 #find_package(MPI REQUIRED COMPONENTS CXX)
 
 

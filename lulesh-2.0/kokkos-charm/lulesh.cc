@@ -533,7 +533,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   //CalcFBHourglassForceForElems A
   std::ostringstream os;
   os << "CalcFBHourglassForceForElems A ";
-  NVTXTracer(os.str(), NVTXColor::GreenSea);
+  //NVTXTracer(os.str(), NVTXColor::GreenSea);
   os.clear();
   Kokkos::parallel_for(Kokkos::Experimental::require(RangePolicy(execSpace, 0, numElem), Kokkos::Experimental::WorkItemProperty::HintLightWeight),
                        KOKKOS_LAMBDA(const int &i2) {
@@ -682,11 +682,11 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
   
   // std::ostringstream os; 
   os << "[END] CalcFBHourglassForceForElems A ";
-  NVTXTracer(os.str(), NVTXColor::GreenSea);
+  //NVTXTracer(os.str(), NVTXColor::GreenSea);
   os.clear();
   if(!do_atomic) {
     os << "CalcFBHourglassForceForElems B ";
-    NVTXTracer(os.str(), NVTXColor::Turquoise);
+    //NVTXTracer(os.str(), NVTXColor::Turquoise);
     os.clear();
     int team_size = 1;
     if(Kokkos::DefaultExecutionSpace().concurrency()>1024) team_size = 128;
@@ -719,7 +719,7 @@ static inline void CalcFBHourglassForceForElems(Domain &domain, Real_t *determ,
 
   // std::ostringstream os;
   os << "[END] CalcFBHourglassForceForElems ";
-  NVTXTracer(os.str(), NVTXColor::Turquoise);
+  //NVTXTracer(os.str(), NVTXColor::Turquoise);
   os.clear();
 }
 
@@ -2099,7 +2099,7 @@ DomainChare::DomainChare(int numRanks, Index_t nx_, int nr_,
 
   //TODO: change
   // hapiCheck(hapiStreamCreateWithPriority(&commStream, hapiStreamDefault, -1));
-  hapiCheck(hapiStreamCreateWithPriority(&commStream, hapiStreamDefault, 0));
+  hapiCheck(hipStreamCreateWithPriority(&commStream, hipStreamDefault, 0));
   computeStream = commStream;
 
   // Use default execution space for both to simplify
