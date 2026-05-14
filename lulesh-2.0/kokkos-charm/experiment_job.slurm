@@ -43,6 +43,9 @@ export FI_MR_CACHE_MONITOR=userfaultfd
 export LCI_NET_LOCK_MODE=poll
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/u/ajain18/hapi_hip/shogo/charm/kokkos/install/lib64
 export PMI_MAX_KVS_ENTRIES=16384
+if [ "$DRY_RUN" = false ]; then
+    nvidia-cuda-mps-control -d
+fi
 
 read -r -a TARGET_ODF_LIST <<< "$ODF_LIST_STR"
 
@@ -83,8 +86,8 @@ for target_odf in "${TARGET_ODF_LIST[@]}"; do
 
     ppn_list=()
     p=$max_int_odf
-    if [ "$p" -gt 16 ]; then
-        p=16
+    if [ "$p" -gt 8 ]; then
+        p=8
     fi
     while true; do
         ppn_list+=( "$p" )
@@ -98,7 +101,7 @@ for target_odf in "${TARGET_ODF_LIST[@]}"; do
         TOTAL_TIME_SUM=0
         TIME_PER_ITER_SUM=0
         
-        CMD_RUN="srun -u --mpi=cray_shasta -n $NP ./build_a40/lulesh +pe $((NP * ppn)) -s $chare_s -i $I -n $N -b 0 -r 1 +gpushm +gpuipceventpool $((2048/ppn)) +gpucommbuffer $((2048/ppn))"
+        CMD_RUN="srun -u --mpi=cray_shasta -n $((NP * ppn)) ./build/lulesh +pe $((NP * ppn)) -s $chare_s -i $I -n $N -b 0 -r 1 +gpushm +gpuipceventpool $((2048/ppn)) +gpucommbuffer $((2048/ppn))"
 
         echo "  Running: N=$N (Cube: ${c}^3), TargetODF=$target_odf, ActualODF=$actual_odf, PPN=$ppn, S_per_chare=$chare_s"
 

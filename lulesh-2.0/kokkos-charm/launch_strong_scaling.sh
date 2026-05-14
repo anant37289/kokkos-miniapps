@@ -3,8 +3,8 @@
 # Configuration
 GPUS_PER_NODE=4
 BASE_S=480
-ITERATIONS=100
-MAX_GPUS=16
+ITERATIONS=50
+MAX_GPUS=32
 
 # Parse arguments
 usage() {
@@ -58,7 +58,7 @@ echo "Max GPUs: $MAX_GPUS"
 # Target Overdecomposition Factors to approximate
 TARGET_ODF_LIST=(1 2 4 8 16 32)
 
-current_gpus=16
+current_gpus=8
 OUTPUT_FILE="lulesh_strong_scaling_benchmark_16GPU_check_for_block.csv"
 
 while [ $current_gpus -le $MAX_GPUS ]; do
@@ -85,7 +85,7 @@ while [ $current_gpus -le $MAX_GPUS ]; do
     export DRY_RUN
     export OUTPUT_FILE
 
-    CMD="sbatch --nodes=$NODES --mem=${memory_request}g --job-name=LULESH_${current_gpus}_GPU --ntasks-per-node=$TASKS_PER_NODE --cpus-per-task=16 --partition=gpuA40x4 --account=mzu-delta-gpu --gpus-per-node=$TASKS_PER_NODE --time=00:30:00 experiment_job.slurm"
+    CMD="sbatch --nodes=$NODES --job-name=LULESH_${current_gpus}_GPU --exclusive --account=mzu-delta-gpu --partition=gpuA40x4 --gpus-per-node=$TASKS_PER_NODE --time=00:30:00 experiment_job.slurm"
 
     if [ "$DRY_RUN" = true ]; then
         echo $CMD
