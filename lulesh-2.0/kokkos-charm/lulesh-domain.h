@@ -236,14 +236,8 @@ public:
   //
 
 
-  Kokkos::View<Real_t*> buffer;
-  size_t buffer_size;
-  size_t buffer_offset;
-
-   void ResizeBuffer(const size_t size);
-
-   template<class Type>
-   Type* AllocateFromBuffer(const Index_t& count); 
+   // Removed raw buffer and ResizeBuffer/AllocateFromBuffer methods,
+   // replaced with persistent Kokkos::View members
 
 
 
@@ -340,29 +334,32 @@ public:
   }
 
   size_t getAllocSize(){
-    //buffer buffer_size*sizeof(Real_t)
     //row_map numReg()+1*sizeof(Index_t)
     //entries numElem()*sizeof(Index_t)
     //Node persistent m_x..m_nodalMass numNode()*sizeof(Real_t)
     //Elem persistent m_nodelist..m_vnew numElem()*___
-    //AllocateCalcVolumeForceBuffer sigxx.. determ  numElem()*___
-    //SetupCommBuffers comBufSize*___
+    //AllocateCalcVolumeForceBuffer sigxx.. determ + fx_elem etc  numElem()*___
     //AllocateVnewc
     //AllocateStrains
     //AllocateGradients
     //m_nodeElemStart & m_nodeElemCornerList
+    //EOS buffers 14*numElem()
+    //elem scratch: 3*numElem8 + 6*numElem*8
 
-    return buffer_size*sizeof(Real_t)+\
-    (numReg()+1)*sizeof(Index_t)+\
+    Index_t numElem8 = numElem() * 8;
+    return (numReg()+1)*sizeof(Index_t)+\
     (numElem()+1)*sizeof(Index_t)+\
     13*(numNode())*sizeof(Real_t)+\
     (numElem()*8 + 6*numElem())*sizeof(Index_t) + numElem()*sizeof(Int_t) + 13*numElem()*sizeof(Real_t)+\
     4*numElem()*sizeof(Real_t)+\
-    5*comBufSize*sizeof(Real_t)+(m_symmX.size()+m_symmY.size()+m_symmZ.size())*sizeof(Index_t)+\
+    (m_symmX.size()+m_symmY.size()+m_symmZ.size())*sizeof(Index_t)+\
     numElem()*sizeof(Real_t)+\
     3*numElem()*sizeof(Real_t)+\
     3*numElem()*sizeof(Real_t)+3*(m_delv_xi.size())*sizeof(Real_t)+\
-    ((numNode()+1) + m_nodeElemCornerList.size())*sizeof(Index_t);
+    ((numNode()+1) + m_nodeElemCornerList.size())*sizeof(Index_t)+\
+    3*numElem8*sizeof(Real_t)+\
+    6*numElem()*8*sizeof(Real_t)+\
+    14*numElem()*sizeof(Real_t);
   }
 
   void DeallocateGradients() {
@@ -406,6 +403,37 @@ public:
         Kokkos::resize(sigyy, numElem);
         Kokkos::resize(sigzz, numElem);
         Kokkos::resize(determ, numElem);
+      }
+      Index_t numElem8 = numElem * 8;
+      if(m_fx_elem.size() != numElem8) {
+          Kokkos::resize(m_fx_elem, numElem8);
+          Kokkos::resize(m_fy_elem, numElem8);
+          Kokkos::resize(m_fz_elem, numElem8);
+          Kokkos::resize(m_dvdx, numElem, 8);
+          Kokkos::resize(m_dvdy, numElem, 8);
+          Kokkos::resize(m_dvdz, numElem, 8);
+          Kokkos::resize(m_x8n, numElem, 8);
+          Kokkos::resize(m_y8n, numElem, 8);
+          Kokkos::resize(m_z8n, numElem, 8);
+      }
+  }
+
+  void AllocateEvalEOSBuffer(Int_t numElem) {
+      if(m_e_old.size() != numElem) {
+          Kokkos::resize(m_e_old, numElem);
+          Kokkos::resize(m_delvc_eos, numElem);
+          Kokkos::resize(m_p_old, numElem);
+          Kokkos::resize(m_q_old, numElem);
+          Kokkos::resize(m_compression, numElem);
+          Kokkos::resize(m_compHalfStep, numElem);
+          Kokkos::resize(m_qq_old, numElem);
+          Kokkos::resize(m_ql_old, numElem);
+          Kokkos::resize(m_work, numElem);
+          Kokkos::resize(m_p_new, numElem);
+          Kokkos::resize(m_e_new, numElem);
+          Kokkos::resize(m_q_new, numElem);
+          Kokkos::resize(m_bvc, numElem);
+          Kokkos::resize(m_pbvc, numElem);
       }
   }
 
@@ -619,14 +647,6 @@ public:
     return &m_nodeElemCornerList[m_nodeElemStart[idx]];
   }
 
-  KOKKOS_INLINE_FUNCTION Real_t& commDataSend(Index_t idx) const {
-    return commDataSendView[idx];
-  }
-
-  KOKKOS_INLINE_FUNCTION  Real_t& commDataRecv(Index_t idx) const {
-    return commDataRecvView[idx];
-  }
-
   // Parameters
 
   // Cutoffs
@@ -692,14 +712,7 @@ public:
 //
 
   // Communication Work space
-  //Real_t *commDataSend;
-  //Real_t *commDataRecv;
-
-  Kokkos::View<Real_t*> commDataSendView;
-  Kokkos::View<Real_t*> commDataRecvView;
-  Kokkos::View<Real_t*> commDataRecvViewSBN;
-  Kokkos::View<Real_t*> commDataRecvViewPosVel;
-  Kokkos::View<Real_t*> commDataRecvViewMonoQ;
+  // Per-neighbor buffers are now allocated in CommDataSendInit/CommDataRecvInit
 
   void BuildMesh(Int_t nx, Int_t edgeNodes, Int_t edgeElems);
   void SetupThreadSupportStructures();
@@ -711,12 +724,6 @@ public:
 
   void pup(PUP::er &p)
   {
-
-    p| buffer_size;
-    if(p.isUnpacking())
-    {
-      buffer = Kokkos::View<Real_t*>("buffer", buffer_size);
-    }
 
     p| m_dtcourant;
     p| m_dthydro;
@@ -787,6 +794,7 @@ public:
       AllocateNodePersistent(numNode());
       AllocateElemPersistent(numElem());
       AllocateCalcVolumeForceBuffer(numElem());
+      AllocateEvalEOSBuffer(numElem());
       //NOTE: Higly dependent on the current cubic decomposition
       SetupCommBuffers(m_sizeX+1);
       AllocateVnewc(numElem());
@@ -907,6 +915,32 @@ public:
 
   // Element-centered
 
+  Kokkos::View<Real_t*> m_fx_elem;
+  Kokkos::View<Real_t*> m_fy_elem;
+  Kokkos::View<Real_t*> m_fz_elem;
+
+  Kokkos::View<Real_t**> m_dvdx;
+  Kokkos::View<Real_t**> m_dvdy;
+  Kokkos::View<Real_t**> m_dvdz;
+  Kokkos::View<Real_t**> m_x8n;
+  Kokkos::View<Real_t**> m_y8n;
+  Kokkos::View<Real_t**> m_z8n;
+
+  Kokkos::View<Real_t*> m_e_old;
+  Kokkos::View<Real_t*> m_delvc_eos;
+  Kokkos::View<Real_t*> m_p_old;
+  Kokkos::View<Real_t*> m_q_old;
+  Kokkos::View<Real_t*> m_compression;
+  Kokkos::View<Real_t*> m_compHalfStep;
+  Kokkos::View<Real_t*> m_qq_old;
+  Kokkos::View<Real_t*> m_ql_old;
+  Kokkos::View<Real_t*> m_work;
+  Kokkos::View<Real_t*> m_p_new;
+  Kokkos::View<Real_t*> m_e_new;
+  Kokkos::View<Real_t*> m_q_new;
+  Kokkos::View<Real_t*> m_bvc;
+  Kokkos::View<Real_t*> m_pbvc;
+
   // Region information
   Int_t m_numReg;
   Int_t m_cost;            // imbalance cost
@@ -1024,8 +1058,6 @@ public:
   Index_t m_maxPlaneSize;
   Index_t m_maxEdgeSize;
 
-  Index_t comBufSize;
-
   // OMP hack
   Kokkos::View<Index_t*> m_nodeElemStart;
   Kokkos::View<Index_t*> m_nodeElemCornerList;
@@ -1046,12 +1078,11 @@ typedef Real_t &(Domain::*Domain_member)(Index_t) const;
 
 class CommData {
 public:
-  CommData(int pmsg_, int emsg_, int cmsg_, int offset_,
+  CommData(int offset_,
            int src_stride_0, int src_stride_1,
            int dst_stride_0, int dst_stride_1,
            int size_0, int size_1)
-      : pmsg(pmsg_), emsg(emsg_), cmsg(cmsg_), 
-        offset(offset_) {
+      : offset(offset_), ghostOffset(0), bufSize(0) {
     src_stride[0] = src_stride_0;
     src_stride[1] = src_stride_1;
     dst_stride[0] = dst_stride_0;
@@ -1060,7 +1091,7 @@ public:
     size[1] = size_1;
   }
 
-  CommData() : pmsg(0), emsg(0), cmsg(0), offset(0) {
+  CommData() : offset(0), ghostOffset(0), bufSize(0) {
     src_stride[0] = 0;
     src_stride[1] = 0;
     dst_stride[0] = 0;
@@ -1070,8 +1101,7 @@ public:
   }
 
   CommData(const CommData& other) 
-      : pmsg(other.pmsg), emsg(other.emsg), cmsg(other.cmsg),
-        offset(other.offset) {
+      : offset(other.offset), ghostOffset(other.ghostOffset), bufSize(other.bufSize), buffer(other.buffer) {
     src_stride[0] = other.src_stride[0];
     src_stride[1] = other.src_stride[1];
     dst_stride[0] = other.dst_stride[0];
@@ -1082,10 +1112,10 @@ public:
 
   CommData& operator=(const CommData& other) {
     if (this != &other) {
-      pmsg = other.pmsg;
-      emsg = other.emsg;
-      cmsg = other.cmsg;
       offset = other.offset;
+      ghostOffset = other.ghostOffset;
+      bufSize = other.bufSize;
+      buffer = other.buffer;
       src_stride[0] = other.src_stride[0];
       src_stride[1] = other.src_stride[1];
       dst_stride[0] = other.dst_stride[0];
@@ -1097,24 +1127,31 @@ public:
   }
 
   int offset;
+  int ghostOffset;
   int src_stride[2];
   int dst_stride[2];
   int size[2];
-  int pmsg, emsg, cmsg;
+  int bufSize;
+
+  Kokkos::View<Real_t*> buffer;
 
   void pup(PUP::er &p)
   {
     p| offset;
+    p| ghostOffset;
     p| src_stride[0];
     p| src_stride[1];
     p| dst_stride[0];
     p| dst_stride[1];
     p| size[0];
     p| size[1];
-    p| pmsg;
-    p| emsg;
-    p| cmsg;
-
+    p| bufSize;
+    if(p.isUnpacking()) {
+       Kokkos::resize(buffer, bufSize);
+    }
+    if (bufSize > 0) {
+       p(buffer.data(), bufSize, PUP::PUPMode::DEVICE);
+    }
   }
 };
 

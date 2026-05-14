@@ -77,8 +77,8 @@ mainmodule lulesh {
             serial {
                 //deposit user data
                 
-                // void *data = getObjUserData(CkpvAccess(_lb_obj_index)); 
-                // *(size_t*)data = locDom->getAllocSize();
+                void *data = getObjUserData(CkpvAccess(_lb_obj_index)); 
+                *(size_t*)data = locDom->getAllocSize();
                 AtSync();
             }
         }
@@ -163,7 +163,7 @@ mainmodule lulesh {
             serial "TimeStepCalculation" {
                 if(flatIndex==1)
                 {
-                    //printf("running cycle %d\n", locDom->cycle());
+                    printf("running cycle %d\n", locDom->cycle());
                     fflush(stdout);
                 }
                 if (locDom->cycle() == 0) {
@@ -344,9 +344,9 @@ mainmodule lulesh {
                         }
                         else
                         {
-                            Kokkos::deep_copy(locDom->commDataRecvViewPosVel, 0.0);
-                            Kokkos::deep_copy(locDom->commDataRecvViewMonoQ, 0.0);
-                            Kokkos::deep_copy(locDom->commDataRecvViewSBN, 0.0);
+                            // Kokkos::deep_copy(locDom->commDataRecvViewPosVel, 0.0);
+                            // Kokkos::deep_copy(locDom->commDataRecvViewMonoQ, 0.0);
+                            // Kokkos::deep_copy(locDom->commDataRecvViewSBN, 0.0);
                             thisProxy[thisIndex].run();
                         }
                     } else {
